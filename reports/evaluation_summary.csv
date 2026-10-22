@@ -1,0 +1,13 @@
+Fault Type,Model,Precision,Recall,F1-Score,Lead Time (samples),Lead Time (minutes)
+IDV(1),Rule-Based,1.000,0.993,0.996,+5.6,+16.7 min
+IDV(1),PCA Reconstruction,0.996,0.991,0.993,+1.1,+3.3 min
+IDV(1),Isolation Forest,0.999,0.736,0.846,+7.9,+23.7 min
+IDV(4),Rule-Based,1.000,0.998,0.999,+1.1,+3.4 min
+IDV(4),PCA Reconstruction,0.996,0.998,0.997,-0.1,-0.2 min
+IDV(4),Isolation Forest,0.978,0.032,0.061,+274.6,+823.8 min
+IDV(6),Rule-Based,1.000,0.999,0.999,+1.0,+3.0 min
+IDV(6),PCA Reconstruction,0.996,0.999,0.997,-0.3,-1.1 min
+IDV(6),Isolation Forest,0.999,0.990,0.995,+8.3,+24.9 min
+IDV(8),Rule-Based,1.000,0.961,0.980,+25.4,+76.3 min
+IDV(8),PCA Reconstruction,0.995,0.922,0.957,+18.5,+55.6 min
+IDV(8),Isolation Forest,0.999,0.958,0.978,+26.4,+79.3 min
