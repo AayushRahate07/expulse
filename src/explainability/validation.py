@@ -1,6 +1,7 @@
 """
 Ground-Truth Attribution Validation Module for Tennessee Eastman Process.
 Maps feature rankings against Downs & Vogel (1993) plant physical equations.
+Includes Functional Process Group Attribution to eliminate collinearity credit dilution.
 """
 
 from typing import Dict, List, Set, Tuple, Any, Optional
@@ -28,6 +29,38 @@ TEP_GROUND_TRUTH_ROOT_CAUSES = {
             "xmeas_26", "xmeas_27", "xmeas_28"
         ],  # Stream 6 & 9 analyzer components A-F
         "secondary": ["xmeas_1", "xmeas_2", "xmeas_3", "xmv_1", "xmv_2"],
+    },
+}
+
+# Functional Process Groups (Addresses Collinear Credit-Sharing)
+TEP_FUNCTIONAL_PROCESS_GROUPS = {
+    "Feed_Reactant_Loop": {
+        "sensors": {"xmeas_1", "xmeas_2", "xmeas_3", "xmeas_4", "xmv_1", "xmv_2", "xmv_3", "xmv_4"},
+        "faults": {1, 6, 8},
+        "description": "Feed streams 1-4 flows and reactant proportioning valves"
+    },
+    "Reactor_Thermal_Cooling_Loop": {
+        "sensors": {"xmeas_9", "xmeas_21", "xmeas_22", "xmv_10", "xmv_11"},
+        "faults": {4},
+        "description": "Reactor temperature, jacket cooling water, condenser cooling"
+    },
+    "Reactor_Pressure_Recycle_Loop": {
+        "sensors": {"xmeas_5", "xmeas_6", "xmeas_7", "xmeas_20", "xmv_6"},
+        "faults": {6, 1},
+        "description": "Reactor pressure, feed rate, recycle stream 8, compressor work, purge vent"
+    },
+    "Separation_Stripping_Unit": {
+        "sensors": {
+            "xmeas_11", "xmeas_12", "xmeas_13", "xmeas_14", "xmeas_15",
+            "xmeas_16", "xmeas_17", "xmeas_18", "xmeas_19", "xmv_7", "xmv_8"
+        },
+        "faults": set(),
+        "description": "Separator & stripper temps, levels, pressures, bottoms flow, steam"
+    },
+    "Stream_Composition_Analyzers": {
+        "sensors": {f"xmeas_{i}" for i in range(23, 39)},
+        "faults": {8},
+        "description": "Online chromatograph analyzers for feed, purge, and product streams"
     },
 }
 
@@ -77,6 +110,31 @@ def compute_mrr(
     return 0.0
 
 
+def compute_grouped_process_attribution(
+    feature_importance_dict: Dict[str, float]
+) -> List[Tuple[str, float]]:
+    """
+    Aggregates individual sensor attributions into functional process groups.
+    Eliminates credit dilution across collinear manifolds (e.g. Stream 1, 4, and feed valve).
+    
+    Returns:
+        List of (group_name, total_attribution) sorted in descending order.
+    """
+    group_scores = {group_name: 0.0 for group_name in TEP_FUNCTIONAL_PROCESS_GROUPS}
+
+    for feat, score in feature_importance_dict.items():
+        matched = False
+        for group_name, group_meta in TEP_FUNCTIONAL_PROCESS_GROUPS.items():
+            if feat in group_meta["sensors"]:
+                group_scores[group_name] += float(score)
+                matched = True
+                break
+
+    # Sort descending
+    sorted_groups = sorted(group_scores.items(), key=lambda x: x[1], reverse=True)
+    return sorted_groups
+
+
 def evaluate_attribution_ranking(
     ranked_features: List[str],
     fault_id: int,
@@ -103,7 +161,6 @@ def compare_attribution_methods_wilcoxon(
     Conducts paired Wilcoxon signed-rank test on H@3 across runs.
     """
     diffs = np.array(h3_method_a) - np.array(h3_method_b)
-    # If all differences are zero, p-value is 1.0
     if np.all(diffs == 0.0):
         return {
             "statistic": 0.0,

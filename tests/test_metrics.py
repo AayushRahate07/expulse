@@ -1,5 +1,5 @@
 """
-Unit Tests for Evaluation Metrics and 3-Minute Lead Time Computation.
+Unit Tests for Evaluation Metrics, 3-Minute Lead Time Computation, and Pre-Fault False Alarm Trap.
 """
 
 import math
@@ -71,3 +71,33 @@ def test_lead_time_3_minute_interval():
     assert lead_meta["lead_time_samples"] == 5  # 165 - 160 = +5 samples
     assert lead_meta["lead_time_minutes"] == 15  # 5 * 3 = 15 minutes
     assert lead_meta["detection_delay_minutes"] == 15
+    assert lead_meta["has_pre_fault_alarm"] is False
+
+
+def test_pre_fault_false_alarms_do_not_corrupt_lead_time():
+    """
+    Verify the fix for P0: Pre-fault false alarms must NOT be credited as negative lead times
+    or early warning alerts.
+    """
+    preds = np.zeros(200, dtype=int)
+    # False alarm at sample 50 (index 49)
+    preds[49:52] = 1
+    # True sustained detection post-fault at sample 163 (index 162)
+    preds[162:165] = 1
+
+    lead_meta = compute_lead_time_metrics(
+        predictions=preds,
+        fault_intro_sample=160,
+        sampling_interval_minutes=3,
+        n_consecutive=3
+    )
+
+    # Pre-fault false alarm must be caught
+    assert lead_meta["has_pre_fault_alarm"] is True
+    assert lead_meta["time_to_first_false_alarm_sample"] == 50
+
+    # Post-fault detection delay must be evaluated strictly post-fault (sample 163, +3 samples delay)
+    assert lead_meta["first_sustained_sample"] == 163
+    assert lead_meta["lead_time_samples"] == 3  # Not -110!
+    assert lead_meta["lead_time_minutes"] == 9  # Not -330!
+    assert lead_meta["detection_delay_minutes"] == 9

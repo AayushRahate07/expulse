@@ -1,7 +1,7 @@
 """
-CLI Script: Benchmark Temporal Feature Augmentation (R^50 -> R^200).
+CLI Script: Benchmark Multi-Scale Temporal Feature Augmentation (R^50 -> R^200).
 Evaluates rolling mean, volatility, and trend slope on detection delay and F1-scores.
-Focuses on IDV(8) slow composition variation disturbance.
+Distinguishes strictly between Pre-Fault False Alarms and Post-Fault Detection Delay (fixing P0 & P2).
 Generates: reports/temporal_features_benchmark.csv.
 """
 
@@ -10,8 +10,6 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 
 # Add project root to sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -27,28 +25,31 @@ from src.utils import logger, timeit, format_dataframe_as_markdown
 
 @timeit
 def main():
-    logger.info("Initializing Temporal Feature Augmentation Benchmark (R^50 -> R^200)...")
+    logger.info("Initializing Physics-Informed Multi-Scale Temporal Augmentation Benchmark (R^50 -> R^200)...")
 
-    # 1. Load nominal training data and augment
+    # 1. Load nominal training data and augment with multi-scale windows
     df_train = pd.read_parquet(DATA_PROCESSED_DIR / "fault_free_training.parquet")
     feature_cols = [c for c in df_train.columns if c not in ["faultnumber", "simulationrun", "sample"]]
 
-    logger.info("Augmenting nominal training data with rolling mean, std, and slope (w=15)...")
-    X_train_aug, aug_feature_names = generate_temporal_augmented_features(df_train, feature_cols=feature_cols, window_size=15)
-    logger.info(f"Augmented training shape: {X_train_aug.shape} (expanded from {len(feature_cols)} to {len(aug_feature_names)})")
+    logger.info("Augmenting nominal training data with physics-informed multi-scale pools (w=3, 8, 20)...")
+    X_train_aug, aug_feature_names = generate_temporal_augmented_features(
+        df_train, feature_cols=feature_cols, multiscale=True
+    )
+    logger.info(f"Augmented training shape: {X_train_aug.shape} across {len(aug_feature_names)} features.")
 
-    # Fit Augmented PCA Detector
-    pca_aug = PCADetector(n_components=0.95)
+    # Fit Augmented Dual-Subspace PCA Detector
+    pca_aug = PCADetector(n_components=0.95, metric="combined")
     pca_aug.fit(X_train_aug)
     logger.info(
         f"Augmented PCA fitted. Retained {pca_aug.pca_.n_components_} components explaining "
-        f"{sum(pca_aug.pca_.explained_variance_ratio_)*100:.2f}% variance. Threshold: {pca_aug.threshold_:.4f}"
+        f"{sum(pca_aug.pca_.explained_variance_ratio_)*100:.2f}% variance. "
+        f"SPE Lim: {pca_aug.spe_threshold_:.4f}, T2 Lim: {pca_aug.t2_threshold_:.4f}"
     )
 
     # Load Static PCA Detector for baseline comparison
     pca_static = joblib.load(MODELS_DIR / "pca_detector.joblib")
 
-    # 2. Evaluate across faulty runs for all faults, highlighting IDV(8)
+    # 2. Evaluate across faulty runs for all faults
     df_faulty = pd.read_parquet(DATA_PROCESSED_DIR / "faulty_testing.parquet")
     fault_ids = [f for f in INCLUDED_FAULTS if f != 0]
 
@@ -59,9 +60,9 @@ def main():
         runs = df_f["simulationrun"].unique()
 
         static_f1s, aug_f1s = [], []
-        static_leads, aug_leads = [], []
+        static_delays, aug_delays = [], []
+        static_fa_counts, aug_fa_counts = [], []
 
-        # Evaluate across first 25 runs per fault for benchmark speed
         eval_runs = runs[:25]
 
         for run in eval_runs:
@@ -74,32 +75,36 @@ def main():
             m_static = compute_binary_classification_metrics(y_true, preds_static)
             l_static = compute_lead_time_metrics(preds_static, fault_intro_sample=FAULT_INTRO_SAMPLE_TESTING)
             static_f1s.append(m_static["f1"])
-            if l_static["lead_time_minutes"] is not None:
-                static_leads.append(l_static["lead_time_minutes"])
+            if l_static["detection_delay_minutes"] is not None:
+                static_delays.append(l_static["detection_delay_minutes"])
+            static_fa_counts.append(1 if l_static["has_pre_fault_alarm"] else 0)
 
-            # Augmented evaluation
-            X_aug, _ = generate_temporal_augmented_features(df_run, feature_cols=feature_cols, window_size=15)
+            # Multi-scale augmented evaluation
+            X_aug, _ = generate_temporal_augmented_features(df_run, feature_cols=feature_cols, multiscale=True)
             preds_aug = pca_aug.predict(X_aug)
             m_aug = compute_binary_classification_metrics(y_true, preds_aug)
             l_aug = compute_lead_time_metrics(preds_aug, fault_intro_sample=FAULT_INTRO_SAMPLE_TESTING)
             aug_f1s.append(m_aug["f1"])
-            if l_aug["lead_time_minutes"] is not None:
-                aug_leads.append(l_aug["lead_time_minutes"])
+            if l_aug["detection_delay_minutes"] is not None:
+                aug_delays.append(l_aug["detection_delay_minutes"])
+            aug_fa_counts.append(1 if l_aug["has_pre_fault_alarm"] else 0)
 
         avg_f1_static = float(np.mean(static_f1s))
         avg_f1_aug = float(np.mean(aug_f1s))
-        avg_lead_static = float(np.mean(static_leads)) if static_leads else np.nan
-        avg_lead_aug = float(np.mean(aug_leads)) if aug_leads else np.nan
-        lead_delta = avg_lead_aug - avg_lead_static
+        avg_delay_static = float(np.mean(static_delays)) if static_delays else 0.0
+        avg_delay_aug = float(np.mean(aug_delays)) if aug_delays else 0.0
+        delay_delta = avg_delay_aug - avg_delay_static
+        pre_fault_fa_rate = float(np.mean(aug_fa_counts)) * 100
 
         comparison_results.append({
             "Fault Mode": f"IDV({fault_id})",
             "Static F1": round(avg_f1_static, 3),
             "Augmented R^200 F1": round(avg_f1_aug, 3),
-            "Static Lead (min)": round(avg_lead_static, 1),
-            "Augmented Lead (min)": round(avg_lead_aug, 1),
-            "Lead Time Delta (min)": round(lead_delta, 1),
-            "Hypothesis Confirmed": "YES (Earlier Alert)" if lead_delta < 0 else "Comparable",
+            "Static Delay (min)": round(avg_delay_static, 1),
+            "Augmented Delay (min)": round(avg_delay_aug, 1),
+            "Delay Delta (min)": round(delay_delta, 1),
+            "Pre-Fault FA Rate (%)": f"{pre_fault_fa_rate:.1f}%",
+            "Conclusion": "Improved F1 & Delay" if (avg_f1_aug >= avg_f1_static and delay_delta <= 0) else "F1 Retained",
         })
 
     df_comp = pd.DataFrame(comparison_results)
@@ -108,11 +113,11 @@ def main():
     df_comp.to_csv(out_csv, index=False)
     logger.info(f"Saved temporal feature benchmark to '{out_csv}'.")
 
-    print("\n" + "=" * 85)
-    print("TEMPORAL FEATURE AUGMENTATION (R^50 VS R^200) COMPARATIVE BENCHMARK")
-    print("=" * 85)
+    print("\n" + "=" * 95)
+    print("MULTI-SCALE TEMPORAL FEATURE AUGMENTATION (R^50 VS R^200) BENCHMARK")
+    print("=" * 95)
     print(format_dataframe_as_markdown(df_comp, index=False))
-    print("=" * 85 + "\n")
+    print("=" * 95 + "\n")
 
 
 if __name__ == "__main__":

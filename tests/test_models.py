@@ -1,11 +1,17 @@
 """
 Unit Tests for Unified Scikit-Learn BaseEstimator Anomaly Detectors.
+Includes tests for Hotelling's T^2, SPE, and Extended Isolation Forest (EIF).
 """
 
 import numpy as np
 from sklearn.base import BaseEstimator
 
-from src.models import RuleBasedDetector, PCADetector, IsolationForestDetector
+from src.models import (
+    RuleBasedDetector,
+    PCADetector,
+    IsolationForestDetector,
+    ExtendedIsolationForestDetector,
+)
 
 
 def _generate_synthetic_data():
@@ -54,5 +60,43 @@ def test_pca_detector_interface():
     _assert_detector_contract(PCADetector, {"n_components": 0.95})
 
 
+def test_pca_hotelling_t2_and_spe_dual_subspace():
+    """
+    Verifies that PCADetector monitors both SPE (residual) and Hotelling's T^2 (in-subspace).
+    Specifically verifies that in-subspace overloads (blind to SPE) are caught by T^2.
+    """
+    np.random.seed(42)
+    X_train = np.random.randn(200, 4)
+    X_train[:, 1] = X_train[:, 0] * 3.0 + np.random.randn(200) * 0.05
+
+    pca_det = PCADetector(n_components=2, metric="combined")
+    pca_det.fit(X_train)
+
+    assert hasattr(pca_det, "spe_threshold_")
+    assert hasattr(pca_det, "t2_threshold_")
+    assert pca_det.spe_threshold_ > 0
+    assert pca_det.t2_threshold_ > 0
+
+    # In-subspace overload: values surge along the exact correlation line
+    X_in_subspace = np.array([[8.0, 24.0, 0.0, 0.0]])
+    t2_val = pca_det.compute_t2(X_in_subspace)[0]
+    combined_val = pca_det.compute_combined_index(X_in_subspace)[0]
+
+    assert t2_val > pca_det.t2_threshold_
+    assert combined_val > 1.0
+
+    # Verify RBC attribution shape
+    rbc = pca_det.feature_rbc_attribution(X_in_subspace)
+    assert rbc.shape == (1, 4)
+
+
 def test_isolation_forest_detector_interface():
     _assert_detector_contract(IsolationForestDetector, {"n_estimators": 50, "random_state": 42})
+
+
+def test_extended_isolation_forest_detector_interface():
+    """Verifies Extended Isolation Forest (EIF) with random hyperplanes on correlated data."""
+    _assert_detector_contract(
+        ExtendedIsolationForestDetector,
+        {"n_estimators": 25, "max_samples": 64, "random_state": 42}
+    )
