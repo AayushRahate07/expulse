@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
-import pyreadr
 
 from src.config import (
     DATA_RAW_DIR,
@@ -46,6 +45,13 @@ def process_single_rdata_file(
     drops uninformative near-constant variables, converts to Parquet,
     and forces explicit garbage collection to prevent memory leaks.
     """
+    try:
+        import pyreadr
+    except ImportError:
+        raise ImportError(
+            "pyreadr is required to read .RData files. Install it via `pip install pyreadr`."
+        )
+
     file_meta = RAW_FILES[key]
     rdata_path = raw_dir / file_meta["filename"]
     parquet_path = processed_dir / f"{key}.parquet"
@@ -99,12 +105,14 @@ def process_single_rdata_file(
     float_cols = [c for c in df.columns if c not in ["faultnumber", "simulationrun", "sample"]]
     df[float_cols] = df[float_cols].astype("float32")
 
-    # 6. For fault-free training/testing datasets, tag train/holdout split if needed
+    # 6. For fault-free training/testing datasets, document train/holdout split
     if key == "fault_free_training":
-
-        logger.info(f"Fault-free training set: {df['simulationrun'].nunique()} simulation runs.")
+        n_runs = df["simulationrun"].nunique()
+        logger.info(
+            f"Fault-free training set: {n_runs} simulation runs "
+            f"({min(n_runs, TRAIN_FAULT_FREE_RUNS)} train / {max(0, n_runs - TRAIN_FAULT_FREE_RUNS)} holdout)."
+        )
     elif key == "fault_free_testing":
-
         logger.info(f"Fault-free testing set: {df['simulationrun'].nunique()} simulation runs.")
 
     # 7. Write to compressed Parquet

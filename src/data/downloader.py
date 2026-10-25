@@ -6,7 +6,20 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 import requests
-from tqdm import tqdm
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    class tqdm:
+        """Lightweight fallback when tqdm is not installed."""
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def update(self, *args, **kwargs):
+            pass
 
 from src.config import DATAVERSE_BASE_URL, RAW_FILES, DATA_RAW_DIR
 from src.utils import logger, verify_md5, timeit

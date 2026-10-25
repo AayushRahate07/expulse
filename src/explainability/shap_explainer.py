@@ -5,10 +5,35 @@ TreeSHAP Attribution Module for Isolation Forest Anomaly Detector.
 from typing import Union, Tuple, Optional
 import numpy as np
 import pandas as pd
-import shap
 
 from src.models.isolation_forest import IsolationForestDetector
 from src.utils import logger
+
+try:
+    import shap
+    _HAS_SHAP = True
+except ImportError:
+    shap = None
+    _HAS_SHAP = False
+
+
+def _compute_perturbation_attribution(
+    detector: IsolationForestDetector,
+    X_arr: np.ndarray,
+    cols: list
+) -> Tuple[np.ndarray, list]:
+    """Fallback attribution using feature mean replacement perturbation."""
+    n_samples, n_features = X_arr.shape
+    baseline_score = detector.decision_function(X_arr)
+    attribution_vals = np.zeros((n_samples, n_features), dtype=np.float64)
+
+    for j in range(n_features):
+        X_permuted = X_arr.copy()
+        X_permuted[:, j] = np.mean(X_permuted[:, j])
+        permuted_score = detector.decision_function(X_permuted)
+        attribution_vals[:, j] = baseline_score - permuted_score
+
+    return attribution_vals, cols
 
 
 def compute_isolation_forest_shap(
@@ -18,6 +43,7 @@ def compute_isolation_forest_shap(
 ) -> Tuple[np.ndarray, list]:
     """
     Computes TreeSHAP values for samples X using fitted IsolationForestDetector.
+    Falls back gracefully to perturbation-based attribution if SHAP is unavailable.
     
     Args:
         detector: Fitted IsolationForestDetector instance.
@@ -35,6 +61,10 @@ def compute_isolation_forest_shap(
 
     cols = feature_names if feature_names is not None else [f"feature_{i}" for i in range(X_arr.shape[1])]
 
+    if not _HAS_SHAP:
+        logger.warning("SHAP package not installed. Falling back to feature perturbation importance.")
+        return _compute_perturbation_attribution(detector, X_arr, cols)
+
     try:
         explainer = shap.TreeExplainer(detector.model_)
         shap_vals = explainer.shap_values(X_scaled)
@@ -46,18 +76,7 @@ def compute_isolation_forest_shap(
         return shap_vals, cols
     except Exception as e:
         logger.warning(f"TreeSHAP calculation failed ({e}). Falling back to feature perturbation importance.")
-        # Fallback perturbation-based attribution
-        n_samples, n_features = X_scaled.shape
-        baseline_score = detector.decision_function(X_arr)
-        shap_vals = np.zeros((n_samples, n_features), dtype=np.float64)
-
-        for j in range(n_features):
-            X_permuted = X_arr.copy()
-            X_permuted[:, j] = np.mean(X_permuted[:, j])
-            permuted_score = detector.decision_function(X_permuted)
-            shap_vals[:, j] = baseline_score - permuted_score
-
-        return shap_vals, cols
+        return _compute_perturbation_attribution(detector, X_arr, cols)
 
 
 def rank_top_contributing_features(

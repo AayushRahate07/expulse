@@ -3,8 +3,8 @@ CLI Script: Three-Way Comparative Evaluation of Rule-Based, PCA, and Isolation F
 """
 
 import sys
-import joblib
 from pathlib import Path
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config import DATA_PROCESSED_DIR, MODELS_DIR, INCLUDED_FAULTS, FAULT_INTRO_SAMPLE_TESTING
 from src.evaluation.metrics import evaluate_run_predictions, compute_binary_classification_metrics, compute_lead_time_metrics
-from src.utils import logger, timeit
+from src.utils import logger, timeit, format_dataframe_as_markdown
 
 
 @timeit
@@ -85,26 +85,38 @@ def main():
             results.append({
                 "Fault Type": f"IDV({fault_id})",
                 "Model": model_name,
-                "Precision": f"{avg_p:.3f}",
-                "Recall": f"{avg_r:.3f}",
-                "F1-Score": f"{avg_f1:.3f}",
-                "Lead Time (samples)": f"{avg_lead_samples:+.1f}" if not np.isnan(avg_lead_samples) else "N/A",
-                "Lead Time (minutes)": f"{avg_lead_mins:+.1f} min" if not np.isnan(avg_lead_mins) else "N/A"
+                "Precision": round(float(avg_p), 3),
+                "Recall": round(float(avg_r), 3),
+                "F1-Score": round(float(avg_f1), 3),
+                "Lead Time (samples)": round(float(avg_lead_samples), 1) if not np.isnan(avg_lead_samples) else None,
+                "Lead Time (minutes)": round(float(avg_lead_mins), 1) if not np.isnan(avg_lead_mins) else None,
             })
 
     df_res = pd.DataFrame(results)
-    
-    print("\n" + "="*80)
-    print("THREE-WAY COMPARATIVE EVALUATION SUMMARY TABLE")
-    print("="*80)
-    print(df_res.to_markdown(index=False))
-    print("="*80 + "\n")
 
-    # Save summary report CSV
+    # Save summary report CSV with clean typed columns
     reports_dir = PROJECT_ROOT / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     df_res.to_csv(reports_dir / "evaluation_summary.csv", index=False)
     logger.info(f"Saved evaluation results to '{reports_dir / 'evaluation_summary.csv'}'.")
+
+    # Format human-friendly display for CLI output
+    df_display = df_res.copy()
+    df_display["Precision"] = df_display["Precision"].map("{:.3f}".format)
+    df_display["Recall"] = df_display["Recall"].map("{:.3f}".format)
+    df_display["F1-Score"] = df_display["F1-Score"].map("{:.3f}".format)
+    df_display["Lead Time (samples)"] = df_display["Lead Time (samples)"].apply(
+        lambda v: f"{v:+.1f}" if pd.notnull(v) else "N/A"
+    )
+    df_display["Lead Time (minutes)"] = df_display["Lead Time (minutes)"].apply(
+        lambda v: f"{v:+.1f} min" if pd.notnull(v) else "N/A"
+    )
+
+    print("\n" + "="*80)
+    print("THREE-WAY COMPARATIVE EVALUATION SUMMARY TABLE")
+    print("="*80)
+    print(format_dataframe_as_markdown(df_display, index=False))
+    print("="*80 + "\n")
 
 
 if __name__ == "__main__":

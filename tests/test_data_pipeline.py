@@ -2,14 +2,12 @@
 Unit Tests for Data Acquisition, Subsetting, Column Cleanup, and Format Conversion Pipeline.
 """
 
-import tempfile
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.config import MAX_SIMULATION_RUN, INCLUDED_FAULTS, EXCLUDED_VARIABLES
-from src.data.convert import clean_column_names, process_single_rdata_file
+from src.data.convert import clean_column_names
 
 
 def test_clean_column_names():

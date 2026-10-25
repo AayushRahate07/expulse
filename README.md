@@ -30,37 +30,52 @@ expulse/
 │   └── processed/             # Subsampled, sanitized Parquet files (ignored by git)
 ├── models/                    # Serialized model binaries (.joblib)
 ├── reports/
-│   ├── evaluation_summary.csv # Three-way comparative evaluation metrics across 100 runs
+│   ├── evaluation_summary.csv              # Three-way comparative evaluation metrics across 100 runs
 │   ├── idv4_pca_attribution.csv
 │   ├── idv4_treeshap_attribution.csv
-│   └── figures/               # Generated 300 DPI publication plots
+│   ├── cusum_vs_consecutive_leadtime.csv   # Page CUSUM vs heuristic delay benchmark
+│   ├── attribution_accuracy_benchmark.csv  # Top-K hit rates and Wilcoxon test vs plant physics
+│   ├── conformal_coverage_analysis.csv     # Non-overlapping block conformal false-alarm control
+│   ├── temporal_features_benchmark.csv     # R^50 -> R^200 dynamic feature benchmark (IDV 8)
+│   └── figures/                            # Generated 300 DPI publication plots
 ├── src/
 │   ├── config.py              # Central constants, file IDs, fault boundaries, variables
 │   ├── utils.py               # Seed setting, streaming MD5 validation, timing, logging
 │   ├── data/
 │   │   ├── downloader.py      # Automated download from Harvard Dataverse with MD5 checks
-│   │   └── convert.py         # Memory-decoupled .RData ingestion & Parquet conversion
+│   │   ├── convert.py         # Memory-decoupled .RData ingestion & Parquet conversion
+│   │   └── features.py        # Rolling temporal augmentation (mean, volatility, trend slope)
 │   ├── models/
 │   │   ├── rule_based.py      # RuleBasedDetector (BaseEstimator)
 │   │   ├── pca_detector.py    # PCADetector (BaseEstimator)
-│   │   └── isolation_forest.py# IsolationForestDetector (BaseEstimator)
+│   │   ├── isolation_forest.py# IsolationForestDetector (BaseEstimator)
+│   │   └── consensus.py       # Tri-Level consensus advisory arbitrator (Levels 1-3)
 │   ├── explainability/
 │   │   ├── shap_explainer.py  # TreeSHAP computation & ranking
-│   │   └── pca_attribution.py # Per-variable reconstruction error attribution
+│   │   ├── pca_attribution.py # Per-variable reconstruction error attribution
+│   │   └── validation.py      # Ground-truth mapping (Downs & Vogel) & Wilcoxon test
 │   └── evaluation/
-│       └── metrics.py         # Precision, Recall, F1, FAR, 3-min lead time calculations
+│       ├── metrics.py         # Precision, Recall, F1, FAR, 3-min lead time calculations
+│       ├── cusum.py           # Page CUSUM sequential change-point detector (Lorden-optimal)
+│       └── conformal.py       # Non-overlapping block conformal prediction for serial correlation
 ├── scripts/
 │   ├── 01_download_data.py    # Download raw RData files
 │   ├── 02_convert_parquet.py  # Convert raw files to Parquet
 │   ├── 03_train_detectors.py  # Fit all three detectors on fault-free training data
 │   ├── 04_evaluate.py         # Run three-way comparative benchmark on test data
 │   ├── 05_explain.py          # Compute and rank feature attributions for IDV(4)
+│   ├── 06_benchmark_cusum.py  # CUSUM vs heuristic windowing delay benchmark
+│   ├── 07_validate_attributions.py # Top-K hit rate (H@1..5), MRR, and Wilcoxon validation
+│   ├── 08_evaluate_block_conformal.py # Empirical block FAR evaluation on 96k healthy samples
+│   ├── 09_benchmark_temporal_features.py # Dynamic R^200 feature expansion benchmark
 │   └── generate_plots.py      # Generate publication-quality figures
-└── tests/
-    ├── test_data_pipeline.py  # Data subsetting, sanitization, config tests
-    ├── test_models.py         # BaseEstimator API contract & shape tests
-    ├── test_metrics.py        # Classification metrics & lead-time unit tests
-    └── test_reproducibility.py# Determinism & seed reproducibility verification
+├── tests/
+│   ├── test_data_pipeline.py   # Data subsetting, sanitization, config tests
+│   ├── test_models.py          # BaseEstimator API contract & shape tests
+│   ├── test_metrics.py         # Classification metrics & lead-time unit tests
+│   ├── test_explainability.py  # Attribution ranking and reconstruction error tests
+│   ├── test_reproducibility.py # Determinism & seed reproducibility verification
+│   └── run_tests.py            # Standalone zero-dependency test runner
 ```
 
 ---
@@ -206,16 +221,20 @@ python scripts/generate_plots.py
 
 ### Running the Interactive Results Viewer
 Launch the local Streamlit dashboard:
-```powershell
-python -m streamlit run app.py
-```
+`powershell
+streamlit run app.py
+`
 
 ### Running Unit Tests
-Execute the test suite (10 automated unit & reproducibility tests):
-```powershell
-python -m pytest tests/
-```
+Execute the test suite (12 automated unit, explainability & reproducibility tests):
+`powershell
+# Using the built-in runner (no external dependencies required):
+python tests/run_tests.py
 
+# Or via standard unittest / pytest:
+python -m unittest
+pytest tests/
+`
 ---
 
 ## 8. Explicit Scope Boundaries (Implemented vs. Omitted)

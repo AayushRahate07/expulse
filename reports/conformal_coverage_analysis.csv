@@ -1,0 +1,10 @@
+Block Length (L samples),Significance Level (alpha),Target Coverage,Block Conformal FAR,Empirical Coverage,Coverage Guarantee Held,Naive Point-wise FAR
+10 (30 min),0.01,99.0%,0.65%,99.35%,YES,1.00%
+10 (30 min),0.05,95.0%,4.61%,95.39%,YES,4.86%
+10 (30 min),0.1,90.0%,9.86%,90.14%,YES,9.93%
+20 (60 min),0.01,99.0%,0.58%,99.42%,YES,1.00%
+20 (60 min),0.05,95.0%,4.38%,95.62%,YES,4.86%
+20 (60 min),0.1,90.0%,9.29%,90.71%,YES,9.93%
+30 (90 min),0.01,99.0%,0.69%,99.31%,YES,1.00%
+30 (90 min),0.05,95.0%,3.75%,96.25%,YES,4.86%
+30 (90 min),0.1,90.0%,8.72%,91.28%,YES,9.93%

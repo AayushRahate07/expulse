@@ -1,0 +1,9 @@
+Fault Mode,Model,H@1,H@3,H@5,MRR,Wilcoxon p-val vs IF,Statistical Winner
+IDV(1),PCA Reconstruction,0.0,0.0,0.0,0.129,1.0000,Tie / Non-sig
+IDV(1),Isolation Forest,0.0,0.0,0.0,0.0,-,-
+IDV(4),PCA Reconstruction,1.0,0.667,0.4,1.0,0.0000,PCA
+IDV(4),Isolation Forest,0.0,0.067,0.1,0.208,-,-
+IDV(6),PCA Reconstruction,0.0,0.133,0.237,0.279,0.6635,Tie / Non-sig
+IDV(6),Isolation Forest,0.15,0.117,0.163,0.339,-,-
+IDV(8),PCA Reconstruction,0.0,0.0,0.0,0.0,0.0833,Tie / Non-sig
+IDV(8),Isolation Forest,0.05,0.05,0.07,0.204,-,-

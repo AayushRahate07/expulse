@@ -9,6 +9,8 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
+from src.config import RANDOM_SEED
+
 
 class IsolationForestDetector(BaseEstimator, ClassifierMixin):
     """
@@ -26,7 +28,7 @@ class IsolationForestDetector(BaseEstimator, ClassifierMixin):
         self,
         n_estimators: int = 100,
         contamination: str = "auto",
-        random_state: int = 42,
+        random_state: int = RANDOM_SEED,
         threshold_percentile: Optional[float] = None
     ) -> None:
         self.n_estimators = n_estimators
@@ -58,11 +60,11 @@ class IsolationForestDetector(BaseEstimator, ClassifierMixin):
         train_scores = self.decision_function(X_arr)
 
         if self.threshold_percentile is not None:
-            self.threshold_ = np.percentile(train_scores, self.threshold_percentile)
+            self.threshold_ = float(np.percentile(train_scores, self.threshold_percentile))
         else:
             q25, q75 = np.percentile(train_scores, [25, 75])
             iqr = q75 - q25
-            self.threshold_ = q75 + 1.5 * iqr
+            self.threshold_ = float(q75 + 1.5 * iqr)
 
         return self
 

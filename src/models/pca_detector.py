@@ -50,11 +50,11 @@ class PCADetector(BaseEstimator, ClassifierMixin):
         train_errors = self.decision_function(X_arr)
 
         if self.threshold_percentile is not None:
-            self.threshold_ = np.percentile(train_errors, self.threshold_percentile)
+            self.threshold_ = float(np.percentile(train_errors, self.threshold_percentile))
         else:
             q25, q75 = np.percentile(train_errors, [25, 75])
             iqr = q75 - q25
-            self.threshold_ = q75 + 1.5 * iqr
+            self.threshold_ = float(q75 + 1.5 * iqr)
 
         return self
 

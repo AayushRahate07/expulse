@@ -2,14 +2,26 @@
 Unit Tests for Evaluation Metrics and 3-Minute Lead Time Computation.
 """
 
+import math
 import numpy as np
-import pytest
 
 from src.evaluation.metrics import (
     compute_binary_classification_metrics,
     compute_first_sustained_detection,
     compute_lead_time_metrics,
 )
+
+try:
+    import pytest
+    approx = pytest.approx
+except ImportError:
+    def approx(expected, rel=1e-5, abs=1e-5):
+        class _Approx:
+            def __eq__(self, other):
+                return math.isclose(other, expected, rel_tol=rel, abs_tol=abs)
+            def __repr__(self):
+                return f"approx({expected})"
+        return _Approx()
 
 
 def test_binary_classification_metrics():
@@ -23,9 +35,9 @@ def test_binary_classification_metrics():
     assert metrics["true_negatives"] == 3
     assert metrics["false_negatives"] == 2
 
-    assert metrics["precision"] == pytest.approx(2 / 3)
-    assert metrics["recall"] == pytest.approx(2 / 4)
-    assert metrics["false_alarm_rate"] == pytest.approx(1 / 4)
+    assert metrics["precision"] == approx(2 / 3)
+    assert metrics["recall"] == approx(2 / 4)
+    assert metrics["false_alarm_rate"] == approx(1 / 4)
 
 
 def test_first_sustained_detection():

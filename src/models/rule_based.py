@@ -19,9 +19,15 @@ class RuleBasedDetector(BaseEstimator, ClassifierMixin):
         Flags a sample as anomalous (1) if decision_function score exceeds the learned threshold.
     """
 
-    def __init__(self, k_std: float = 3.0, threshold_percentile: Optional[float] = None) -> None:
+    def __init__(
+        self,
+        k_std: float = 3.0,
+        threshold_percentile: Optional[float] = None,
+        min_threshold: float = 1.0
+    ) -> None:
         self.k_std = k_std
         self.threshold_percentile = threshold_percentile
+        self.min_threshold = min_threshold
         self.means_: Optional[np.ndarray] = None
         self.stds_: Optional[np.ndarray] = None
         self.upper_bounds_: Optional[np.ndarray] = None
@@ -46,12 +52,12 @@ class RuleBasedDetector(BaseEstimator, ClassifierMixin):
         train_scores = self.decision_function(X_arr)
 
         if self.threshold_percentile is not None:
-            self.threshold_ = np.percentile(train_scores, self.threshold_percentile)
+            self.threshold_ = float(np.percentile(train_scores, self.threshold_percentile))
         else:
-            # Default Q3 + 1.5 * IQR rule
+            # Default Q3 + 1.5 * IQR rule with floor to prevent 0-threshold collapse on nominal data
             q25, q75 = np.percentile(train_scores, [25, 75])
             iqr = q75 - q25
-            self.threshold_ = max(1.0, q75 + 1.5 * iqr)
+            self.threshold_ = float(max(self.min_threshold, q75 + 1.5 * iqr))
 
         return self
 

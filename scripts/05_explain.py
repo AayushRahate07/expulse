@@ -3,8 +3,8 @@ CLI Script: Explainability Comparison (TreeSHAP vs PCA Reconstruction Error Attr
 """
 
 import sys
-import joblib
 from pathlib import Path
+import joblib
 import pandas as pd
 
 # Add project root to sys.path
@@ -16,7 +16,7 @@ from src.config import DATA_PROCESSED_DIR, MODELS_DIR, FAULT_INTRO_SAMPLE_TESTIN
 from src.explainability import compute_isolation_forest_shap, compute_pca_feature_attribution
 from src.explainability.shap_explainer import rank_top_contributing_features
 from src.explainability.pca_attribution import rank_top_pca_contributions
-from src.utils import logger, timeit
+from src.utils import logger, timeit, format_dataframe_as_markdown
 
 
 @timeit
@@ -49,18 +49,20 @@ def main():
     pca_errs, feat_names = compute_pca_feature_attribution(pca_model, X_anom, feature_names=feature_cols)
     top_pca = rank_top_pca_contributions(pca_errs, feat_names, top_k=5)
 
+    # Save attribution reports first to guarantee persistence
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    top_shap.to_csv(REPORTS_DIR / "idv4_treeshap_attribution.csv", index=False)
+    top_pca.to_csv(REPORTS_DIR / "idv4_pca_attribution.csv", index=False)
+    logger.info(f"Saved attribution reports to '{REPORTS_DIR}'.")
+
     print("\n" + "="*80)
     print("ROOT-CAUSE ATTRIBUTION COMPARISON FOR FAULT IDV(4)")
     print("="*80)
     print("--- Isolation Forest Top 5 TreeSHAP Features ---")
-    print(top_shap.to_markdown(index=False))
+    print(format_dataframe_as_markdown(top_shap, index=False))
     print("\n--- PCA Top 5 Reconstruction Error Features ---")
-    print(top_pca.to_markdown(index=False))
+    print(format_dataframe_as_markdown(top_pca, index=False))
     print("="*80 + "\n")
-
-    top_shap.to_csv(REPORTS_DIR / "idv4_treeshap_attribution.csv", index=False)
-    top_pca.to_csv(REPORTS_DIR / "idv4_pca_attribution.csv", index=False)
-    logger.info(f"Saved attribution reports to '{REPORTS_DIR}'.")
 
 
 if __name__ == "__main__":

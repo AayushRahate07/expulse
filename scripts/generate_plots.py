@@ -3,14 +3,25 @@ CLI Script: Generate Publication-Ready Figures and Plots.
 Section 8 / Week 11 Deliverable.
 """
 
+import os
 import sys
-import joblib
+import tempfile
 from pathlib import Path
 
+# Ensure Matplotlib config directory is writable across environments
+os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "matplotlib_config"))
+
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
+
+try:
+    import seaborn as sns
+    _HAS_SEABORN = True
+except ImportError:
+    sns = None
+    _HAS_SEABORN = False
 
 # Add project root to sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -24,8 +35,12 @@ from src.explainability.pca_attribution import rank_top_pca_contributions
 from src.utils import logger, timeit
 
 
-# Set seaborn publication style
-sns.set_theme(style="whitegrid", palette="muted")
+# Set publication figure styling
+if _HAS_SEABORN:
+    sns.set_theme(style="whitegrid", palette="muted")
+else:
+    plt.style.use("tableau-colorblind10")
+
 plt.rcParams.update({
     "font.family": "sans-serif",
     "font.size": 11,
@@ -33,8 +48,58 @@ plt.rcParams.update({
     "axes.titlesize": 13,
     "xtick.labelsize": 10,
     "ytick.labelsize": 10,
-    "figure.titlesize": 14
+    "figure.titlesize": 14,
+    "axes.grid": True,
+    "grid.alpha": 0.3
 })
+
+
+def _plot_grouped_bars(df: pd.DataFrame, x_col: str, y_col: str, hue_col: str, ax: plt.Axes, title: str, ylabel: str):
+    """Plots grouped bars using seaborn if available, or matplotlib with clean formatting."""
+    if _HAS_SEABORN:
+        sns.barplot(data=df, x=x_col, y=y_col, hue=hue_col, ax=ax, palette="Set2")
+    else:
+        x_vals = df[x_col].unique()
+        hue_vals = df[hue_col].unique()
+        palette = ["#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3"]
+        x_indices = np.arange(len(x_vals))
+        width = 0.8 / len(hue_vals)
+
+        for i, hue in enumerate(hue_vals):
+            sub_df = df[df[hue_col] == hue]
+            mapping = dict(zip(sub_df[x_col], sub_df[y_col]))
+            y_vals = [mapping.get(x, 0.0) for x in x_vals]
+            ax.bar(
+                x_indices + (i - len(hue_vals) / 2 + 0.5) * width,
+                y_vals,
+                width=width,
+                label=str(hue),
+                color=palette[i % len(palette)],
+                edgecolor="white"
+            )
+
+        ax.set_xticks(x_indices)
+        ax.set_xticklabels(x_vals)
+        ax.legend(title=hue_col)
+
+    ax.set_title(title)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel(x_col)
+
+
+def _plot_horizontal_bar(df: pd.DataFrame, x_col: str, y_col: str, ax: plt.Axes, title: str, xlabel: str, color: str):
+    """Plots horizontal ranking bar chart."""
+    if _HAS_SEABORN:
+        sns.barplot(data=df, x=x_col, y=y_col, ax=ax, color=color)
+    else:
+        y_pos = np.arange(len(df))
+        ax.barh(y_pos, df[x_col].values, color=color, edgecolor="none", alpha=0.85)
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(df[y_col].values)
+        ax.invert_yaxis()
+
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
 
 
 @timeit
@@ -92,23 +157,34 @@ def generate_publication_figures():
     if summary_path.exists():
         df_sum = pd.read_csv(summary_path)
 
-        # Clean Lead Time column for numeric plotting
-        df_sum["Lead_Mins_Num"] = df_sum["Lead Time (minutes)"].str.replace(" min", "").str.replace("+", "").astype(float)
+        # Parse numeric lead time column cleanly whether stored as float or string "+16.7 min"
+        if pd.api.types.is_numeric_dtype(df_sum["Lead Time (minutes)"]):
+            df_sum["Lead_Mins_Num"] = df_sum["Lead Time (minutes)"].fillna(0.0)
+        else:
+            cleaned_str = (
+                df_sum["Lead Time (minutes)"]
+                .astype(str)
+                .str.replace(" min", "", regex=False)
+                .str.replace("+", "", regex=False)
+            )
+            df_sum["Lead_Mins_Num"] = pd.to_numeric(cleaned_str, errors="coerce").fillna(0.0)
+
+        # Ensure F1-Score is float
+        df_sum["F1-Score"] = pd.to_numeric(df_sum["F1-Score"], errors="coerce")
 
         # Figure 2: F1-Score Comparison
         fig, ax = plt.subplots(figsize=(8, 5))
-        sns.barplot(data=df_sum, x="Fault Type", y="F1-Score", hue="Model", ax=ax, palette="Set2")
+        _plot_grouped_bars(df_sum, x_col="Fault Type", y_col="F1-Score", hue_col="Model", ax=ax,
+                           title="F1-Score Comparison Across Fault Types", ylabel="F1-Score")
         ax.set_ylim(0, 1.1)
-        ax.set_title("F1-Score Comparison Across Fault Types")
         plt.tight_layout()
         fig.savefig(figures_dir / "figure_2_benchmark_f1_comparison.png", dpi=300)
         plt.close()
 
         # Figure 3: Lead Time Comparison
         fig, ax = plt.subplots(figsize=(8, 5))
-        sns.barplot(data=df_sum, x="Fault Type", y="Lead_Mins_Num", hue="Model", ax=ax, palette="Set2")
-        ax.set_ylabel("Lead Time (Minutes)")
-        ax.set_title("Early Warning Lead Time (Minutes) Comparison")
+        _plot_grouped_bars(df_sum, x_col="Fault Type", y_col="Lead_Mins_Num", hue_col="Model", ax=ax,
+                           title="Early Warning Lead Time (Minutes) Comparison", ylabel="Lead Time (Minutes)")
         plt.tight_layout()
         fig.savefig(figures_dir / "figure_3_lead_time_comparison.png", dpi=300)
         plt.close()
@@ -126,13 +202,13 @@ def generate_publication_figures():
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
 
-    sns.barplot(data=top_shap, x="mean_abs_shap", y="feature", ax=axes[0], color="#5cb85c")
-    axes[0].set_title("Isolation Forest - TreeSHAP Top 5 Features")
-    axes[0].set_xlabel("Mean |SHAP Value|")
+    _plot_horizontal_bar(top_shap, x_col="mean_abs_shap", y_col="feature", ax=axes[0],
+                         title="Isolation Forest - Attribution Top 5 Features",
+                         xlabel="Mean |Attribution Value|", color="#5cb85c")
 
-    sns.barplot(data=top_pca, x="mean_reconstruction_error", y="feature", ax=axes[1], color="#428bca")
-    axes[1].set_title("PCA Top 5 Reconstruction Error Features")
-    axes[1].set_xlabel("Mean Squared Error")
+    _plot_horizontal_bar(top_pca, x_col="mean_reconstruction_error", y_col="feature", ax=axes[1],
+                         title="PCA Top 5 Reconstruction Error Features",
+                         xlabel="Mean Squared Error", color="#428bca")
 
     plt.tight_layout()
     fig.savefig(figures_dir / "figure_4_idv4_attribution.png", dpi=300)

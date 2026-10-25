@@ -2,9 +2,10 @@
 CLI Script: Train RuleBasedDetector, PCADetector, and IsolationForestDetector on Healthy Data.
 """
 
+import argparse
 import sys
-import joblib
 from pathlib import Path
+import joblib
 import pandas as pd
 
 # Add project root to sys.path
@@ -12,14 +13,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import DATA_PROCESSED_DIR, MODELS_DIR
+from src.config import DATA_PROCESSED_DIR, MODELS_DIR, RANDOM_SEED, TRAIN_FAULT_FREE_RUNS
 from src.models import RuleBasedDetector, PCADetector, IsolationForestDetector
 from src.utils import logger, timeit, set_seed
 
 
 @timeit
-def main():
-    set_seed(42)
+def main(use_train_split: bool = False):
+    set_seed(RANDOM_SEED)
 
     train_path = DATA_PROCESSED_DIR / "fault_free_training.parquet"
     test_path = DATA_PROCESSED_DIR / "fault_free_testing.parquet"
@@ -30,6 +31,10 @@ def main():
 
     logger.info(f"Loading fault-free training dataset from '{train_path}'...")
     df_train = pd.read_parquet(train_path)
+
+    if use_train_split:
+        logger.info(f"Filtering training set to first {TRAIN_FAULT_FREE_RUNS} runs (proposal 70/30 split).")
+        df_train = df_train[df_train["simulationrun"] <= TRAIN_FAULT_FREE_RUNS]
 
     # Exclude metadata columns
     feature_cols = [c for c in df_train.columns if c not in ["faultnumber", "simulationrun", "sample"]]
@@ -55,7 +60,7 @@ def main():
 
     # 3. Train Isolation Forest Detector
     logger.info("--- Fitting IsolationForestDetector ---")
-    if_detector = IsolationForestDetector(n_estimators=100, random_state=42)
+    if_detector = IsolationForestDetector(n_estimators=100, random_state=RANDOM_SEED)
     if_detector.fit(X_train)
     logger.info(f"IsolationForestDetector fitted. Threshold: {if_detector.threshold_:.4f}")
     joblib.dump(if_detector, MODELS_DIR / "isolation_forest_detector.joblib")
@@ -64,4 +69,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Train baseline anomaly detectors on nominal data.")
+    parser.add_argument(
+        "--split",
+        action="store_true",
+        help=f"Train exclusively on first {TRAIN_FAULT_FREE_RUNS} nominal runs, holding out the rest."
+    )
+    args = parser.parse_args()
+    main(use_train_split=args.split)
