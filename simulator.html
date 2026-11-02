@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏭</text></svg>">
+  <title>TEP — Cascading Failure & Propagation Simulator</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geologica:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    html, body {
+      height: 100%;
+      width: 100%;
+      color-scheme: dark;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      font-family: 'Geologica', sans-serif;
+      background-color: #06090f;
+      color: #cbd5e1;
+    }
+    .font-mono-val {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .flow-stream {
+      stroke-dasharray: 6 8;
+      animation: pipeFlow 2s linear infinite;
+    }
+    .flow-stream-reflux {
+      stroke-dasharray: 5 6;
+      animation: pipeFlow 2.8s linear infinite;
+    }
+    #fault-callout { transition: opacity .25s ease; }
+    #fault-callout.pop { animation: calloutPop .45s ease-out; }
+    @keyframes calloutPop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pipeFlow {
+      from { stroke-dashoffset: 28; }
+      to { stroke-dashoffset: 0; }
+    }
+    .cascade-pulse {
+      animation: rippleAlarm 1.4s ease-out infinite;
+    }
+    @keyframes rippleAlarm {
+      0% { opacity: 0.9; stroke-width: 2.5; }
+      50% { opacity: 0.35; stroke-width: 6; }
+      100% { opacity: 0.9; stroke-width: 2.5; }
+    }
+    .eng-grid { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+      background-size: 24px 24px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    }
+    input[type=range]::-webkit-slider-thumb {
+      height: 12px;
+      width: 12px;
+      border-radius: 9999px;
+      background: #38bdf8;
+      cursor: pointer;
+      -webkit-appearance: none;
+      box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+    }
+  </style>
+</head>
+<body class="h-full w-full flex flex-col eng-grid antialiased select-none overflow-hidden">
+
+  <!-- COMPACT TOP NAVBAR -->
+  <header class="h-11 bg-[#090d16] border-b border-slate-800/90 px-4 flex items-center justify-between gap-3 shrink-0">
+    <div class="flex items-center gap-2.5">
+      <div class="px-1.5 py-0.5 bg-slate-800 border border-slate-700/80 rounded text-sky-300 text-[10px] font-mono-val font-semibold tracking-wider">
+        TEP DCS
+      </div>
+      <div class="flex items-baseline gap-2">
+        <h1 class="text-xs font-semibold tracking-tight text-slate-100">
+          Tennessee Eastman Process
+        </h1>
+        <span class="text-[10px] text-slate-400 font-normal hidden sm:inline">Cascading Disturbance & Domino Propagation Simulator</span>
+      </div>
+    </div>
+
+    <!-- PLAYBACK & SCENARIO BAR -->
+    <div class="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-2 py-1 rounded text-xs">
+      <label for="fault-select" class="text-slate-400 text-[10px]">Fault:</label>
+      <select id="fault-select" onchange="changeScenario(this.value)" class="bg-[#06090f] border border-slate-700/80 rounded px-2 py-0.5 text-[11px] text-slate-200 focus:outline-none focus:border-sky-500">
+        <option value="6" selected>IDV(6) Reactant A Feed Stream Loss</option>
+        <option value="4">IDV(4) Reactor Coolant Temp Step Drop</option>
+        <option value="1">IDV(1) A/C Feed Ratio Step Shift</option>
+        <option value="8">IDV(8) A/B/C Feed Composition Random Drift</option>
+      </select>
+
+      <div class="h-3.5 w-px bg-slate-800"></div>
+
+      <!-- Compact Stage Stepper -->
+      <div class="flex items-center gap-1">
+        <button onclick="setCascadeStage(0)" class="stage-btn px-1.5 py-0.5 rounded text-[10px] font-mono-val border bg-sky-950/80 border-sky-500 text-sky-200" data-stage="0">S0</button>
+        <button onclick="setCascadeStage(1)" class="stage-btn px-1.5 py-0.5 rounded text-[10px] font-mono-val border bg-slate-900 border-slate-800 text-slate-400" data-stage="1">S1</button>
+        <button onclick="setCascadeStage(2)" class="stage-btn px-1.5 py-0.5 rounded text-[10px] font-mono-val border bg-slate-900 border-slate-800 text-slate-400" data-stage="2">S2</button>
+        <button onclick="setCascadeStage(3)" class="stage-btn px-1.5 py-0.5 rounded text-[10px] font-mono-val border bg-slate-900 border-slate-800 text-slate-400" data-stage="3">S3</button>
+        <button onclick="setCascadeStage(4)" class="stage-btn px-1.5 py-0.5 rounded text-[10px] font-mono-val border bg-slate-900 border-slate-800 text-slate-400" data-stage="4">S4</button>
+      </div>
+
+      <div class="h-3.5 w-px bg-slate-800"></div>
+
+      <button id="btn-play-cascade" onclick="togglePlayCascade()" class="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-medium flex items-center gap-1 transition-colors">
+        <span id="play-cascade-icon">▶</span> <span id="play-cascade-label">Play</span>
+      </button>
+      <button onclick="resetToNominal()" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-mono-val">
+        Reset
+      </button>
+
+      <div class="flex items-center gap-1.5 ml-1">
+        <input type="range" id="cascade-slider" min="0" max="4" value="0" step="1" oninput="setCascadeStage(parseInt(this.value, 10))" class="w-16 h-1 bg-slate-800 rounded appearance-none cursor-pointer">
+        <span id="display-time-elapsed" class="text-[10px] font-mono-val text-sky-400 min-w-[36px] text-right font-semibold">+0m</span>
+      </div>
+    </div>
+
+    <!-- OVERALL STATUS BADGE -->
+    <div id="plant-trip-badge" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-[10px] font-medium">
+      <span id="status-bulb" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+      <span id="status-banner-text">NOMINAL (STAGE 0)</span>
+    </div>
+  </header>
+
+  <!-- MAIN VIEWPORT BODY (FITS REMAINDER EXACTLY) -->
+  <main class="flex-1 flex w-full overflow-hidden p-2.5 gap-2.5 min-h-0">
+
+    <!-- LEFT: CLEAN PROCESS FLOW DIAGRAM (PFD) (73% WIDTH) -->
+    <section class="flex-[3] bg-[#080c14] rounded-lg border border-slate-800/90 relative flex flex-col overflow-hidden min-w-0 shadow-lg">
+      
+      <div class="shrink-0 flex items-center justify-between gap-4 px-3 py-2 border-b border-slate-800/90 bg-[#0a0f1c]">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 mb-0.5">
+            <span id="stage-badge" class="px-1.5 py-0.5 rounded text-[10px] font-mono-val font-semibold bg-emerald-950 text-emerald-300 border border-emerald-500/30 shrink-0">S0 · NOMINAL</span>
+            <span id="stage-location-tag" class="text-[12px] text-slate-100 font-medium truncate">Continuous Steady-State</span>
+          </div>
+          <p id="stage-explanation-text" class="text-[11px] text-slate-400 leading-snug">All loops in equilibrium.</p>
+        </div>
+        <div class="hidden md:flex items-center gap-3 text-[10px] font-mono-val text-slate-400 shrink-0">
+          <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-sky-400 inline-block"></span>Process</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-slate-400 inline-block"></span>Gas</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-amber-400 inline-block"></span>Deviating</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-rose-500 inline-block"></span>Disturbed</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full border border-rose-500 bg-rose-500/30 inline-block"></span>Active fault</span>
+        </div>
+      </div>
+      <div class="flex-1 min-h-0 w-full p-1.5"><svg id="cascade-canvas" viewBox="0 0 1000 575" preserveAspectRatio="xMidYMid meet" class="w-full h-full select-none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+ <linearGradient id="vesselGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0b1220"/><stop offset="0.28" stop-color="#25324a"/><stop offset="0.55" stop-color="#17213a"/><stop offset="1" stop-color="#0a101c"/></linearGradient>
+ <linearGradient id="jacketGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0284c7" stop-opacity="0.38"/><stop offset="1" stop-color="#0369a1" stop-opacity="0.1"/></linearGradient>
+ <linearGradient id="liqGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38bdf8" stop-opacity="0.38"/><stop offset="1" stop-color="#0369a1" stop-opacity="0.2"/></linearGradient>
+ <marker id="arr-blue" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#38bdf8"/></marker>
+ <marker id="arr-gray" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#94a3b8"/></marker>
+ <marker id="arr-red" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L8 4L0 8z" fill="#ef4444"/></marker>
+ <clipPath id="clip-reactor"><path d="M140,166 A60.0,16 0 0 1 260,166 L260,319 A60.0,16 0 0 1 140,319 Z"/></clipPath>
+ <clipPath id="clip-sep"><path d="M490,186 A40.0,16 0 0 1 570,186 L570,324 A40.0,16 0 0 1 490,324 Z"/></clipPath>
+ <clipPath id="clip-strip"><path d="M660,359 A40.0,14 0 0 1 740,359 L740,471 A40.0,14 0 0 1 660,471 Z"/></clipPath>
+ <g id="vlv"><polygon points="-10,-6 0,0 -10,6" fill="#1e293b" stroke="#94a3b8" stroke-width="1.2"/><polygon points="10,-6 0,0 10,6" fill="#1e293b" stroke="#94a3b8" stroke-width="1.2"/><line x1="0" y1="0" x2="0" y2="-12" stroke="#94a3b8" stroke-width="1.2"/><path d="M-7 -12 A7 6 0 0 1 7 -12 Z" fill="#334155" stroke="#94a3b8" stroke-width="1.2"/></g>
+</defs>
+<rect x="8" y="10" width="364" height="505" rx="8" fill="#0a1019" fill-opacity="0.55" stroke="#1e293b" stroke-width="1" stroke-dasharray="5 4"/><text x="20" y="27" fill="#475569" font-size="9.5" font-weight="600" text-anchor="start" font-family="'JetBrains Mono',monospace" letter-spacing="1.4">AREA 100 · FEED &amp; REACTION</text><rect x="384" y="10" width="234" height="505" rx="8" fill="#0a1019" fill-opacity="0.55" stroke="#1e293b" stroke-width="1" stroke-dasharray="5 4"/><text x="396" y="27" fill="#475569" font-size="9.5" font-weight="600" text-anchor="start" font-family="'JetBrains Mono',monospace" letter-spacing="1.4">AREA 200 · CONDENSE &amp; SEPARATE</text><rect x="628" y="10" width="260" height="505" rx="8" fill="#0a1019" fill-opacity="0.55" stroke="#1e293b" stroke-width="1" stroke-dasharray="5 4"/><text x="640" y="27" fill="#475569" font-size="9.5" font-weight="600" text-anchor="start" font-family="'JetBrains Mono',monospace" letter-spacing="1.4">AREA 300 · RECYCLE &amp; STRIPPING</text><path d="M10 50 L170 50 L170 153" fill="none" stroke="#1e293b" stroke-width="6" stroke-linejoin="round"/><path d="M10 50 L170 50 L170 153" fill="none" stroke="#0c4a6e" stroke-width="3" stroke-linejoin="round"/><path id="path-feed-a-flow" d="M10 50 L170 50 L170 153" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><path d="M10 80 L170 80" fill="none" stroke="#1e293b" stroke-width="5.5" stroke-linejoin="round"/><path d="M10 80 L170 80" fill="none" stroke="#0c4a6e" stroke-width="2.5" stroke-linejoin="round"/><path d="M10 80 L170 80" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><path d="M10 110 L170 110" fill="none" stroke="#1e293b" stroke-width="5.5" stroke-linejoin="round"/><path d="M10 110 L170 110" fill="none" stroke="#0c4a6e" stroke-width="2.5" stroke-linejoin="round"/><path d="M10 110 L170 110" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><circle cx="170" cy="80" r="3" fill="#38bdf8"/><circle cx="170" cy="110" r="3" fill="#38bdf8"/><text x="10" y="43" fill="#64748b" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >A FEED · STR-01</text><text x="10" y="73" fill="#64748b" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >D / E FEED · STR-02/03</text><text x="10" y="103" fill="#64748b" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >A + C FEED · STR-04</text><path d="M10 285 L130 285" fill="none" stroke="#1e293b" stroke-width="5.5" stroke-linejoin="round"/><path d="M10 285 L130 285" fill="none" stroke="#075985" stroke-width="2.5" stroke-linejoin="round"/><path id="path-cw-in-flow" d="M10 285 L130 285" fill="none" stroke="#7dd3fc" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><path d="M270 310 L310 310 L310 425" fill="none" stroke="#1e293b" stroke-width="5.5" stroke-linejoin="round"/><path d="M270 310 L310 310 L310 425" fill="none" stroke="#075985" stroke-width="2.5" stroke-linejoin="round"/><path d="M270 310 L310 310 L310 425" fill="none" stroke="#7dd3fc" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><text x="10" y="273" fill="#7dd3fc" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >CW SUPPLY</text><text x="316" y="438" fill="#7dd3fc" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >CW RETURN</text><path d="M260 215 L330 215 L330 105 L400 105" fill="none" stroke="#1e293b" stroke-width="6" stroke-linejoin="round"/><path d="M260 215 L330 215 L330 105 L400 105" fill="none" stroke="#0c4a6e" stroke-width="3" stroke-linejoin="round"/><path id="path-effluent-flow" d="M260 215 L330 215 L330 105 L400 105" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><text x="336" y="160" fill="#64748b" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >STR-05</text><text x="336" y="171" fill="#64748b" font-size="8" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >EFFLUENT</text><path d="M470 105 L480 105 L480 215 L490 215" fill="none" stroke="#1e293b" stroke-width="5.5" stroke-linejoin="round"/><path d="M470 105 L480 105 L480 215 L490 215" fill="none" stroke="#0c4a6e" stroke-width="2.5" stroke-linejoin="round"/><path d="M470 105 L480 105 L480 215 L490 215" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><text x="414" y="160" fill="#64748b" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >STR-06</text><path d="M530 170 L530 135 L666 135" fill="none" stroke="#1e293b" stroke-width="5.5" stroke-linejoin="round"/><path d="M530 170 L530 135 L666 135" fill="none" stroke="#475569" stroke-width="2.5" stroke-linejoin="round"/><path d="M530 170 L530 135 L666 135" fill="none" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><text x="540" y="128" fill="#64748b" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >STR-07 · VAPOR</text><path d="M714 135 L925 135 L925 500 L708 500 A8 8 0 0 0 692 500 L200 500 L200 336" fill="none" stroke="#1e293b" stroke-width="5.5" stroke-linejoin="round"/><path d="M714 135 L925 135 L925 500 L708 500 A8 8 0 0 0 692 500 L200 500 L200 336" fill="none" stroke="#334155" stroke-width="2.5" stroke-linejoin="round"/><path d="M714 135 L925 135 L925 500 L708 500 A8 8 0 0 0 692 500 L200 500 L200 336" fill="none" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream-reflux" marker-end="url(#arr-gray)"/><text x="300" y="493" fill="#64748b" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >STR-08 · RECYCLE GAS</text><path d="M800 135 L800 62 L975 62" fill="none" stroke="#1e293b" stroke-width="5" stroke-linejoin="round"/><path d="M800 135 L800 62 L975 62" fill="none" stroke="#475569" stroke-width="2" stroke-linejoin="round"/><path d="M800 135 L800 62 L975 62" fill="none" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream" marker-end="url(#arr-gray)"/><circle cx="800" cy="135" r="3" fill="#94a3b8"/><text x="820" y="54" fill="#64748b" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >STR-09 · PURGE</text><text x="820" y="76" fill="#64748b" font-size="8" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >TO FLARE / VENT</text><path d="M530 340 L530 400 L660 400" fill="none" stroke="#1e293b" stroke-width="5.5" stroke-linejoin="round"/><path d="M530 340 L530 400 L660 400" fill="none" stroke="#0c4a6e" stroke-width="2.5" stroke-linejoin="round"/><path d="M530 340 L530 400 L660 400" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><text x="540" y="392" fill="#64748b" font-size="9" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >STR-10 · LIQUID</text><path d="M700 485 L700 550 L970 550" fill="none" stroke="#1e293b" stroke-width="6.2" stroke-linejoin="round"/><path d="M700 485 L700 550 L970 550" fill="none" stroke="#047857" stroke-width="3.2" stroke-linejoin="round"/><path id="path-product-flow" d="M700 485 L700 550 L970 550" fill="none" stroke="#34d399" stroke-width="1.4" stroke-linejoin="round" class="flow-stream" marker-end="url(#arr-blue)"/><text id="txt-product-label" x="715" y="543" fill="#34d399" font-size="10" font-weight="600" font-family="'JetBrains Mono',monospace">STR-11 [PRODUCT G &amp; H]</text><path d="M880 440 L815 440" fill="none" stroke="#1e293b" stroke-width="5.2" stroke-linejoin="round"/><path d="M880 440 L815 440" fill="none" stroke="#92400e" stroke-width="2.2" stroke-linejoin="round"/><path d="M880 440 L815 440" fill="none" stroke="#fbbf24" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><text x="826" y="432" fill="#fbbf24" font-size="8.5" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >LP STEAM</text><path d="M740 436 L745 436" fill="none" stroke="#1e293b" stroke-width="5" stroke-linejoin="round"/><path d="M740 436 L745 436" fill="none" stroke="#334155" stroke-width="2" stroke-linejoin="round"/><path d="M740 436 L745 436" fill="none" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><path d="M740 470 L780 470 L780 455" fill="none" stroke="#1e293b" stroke-width="5" stroke-linejoin="round"/><path d="M740 470 L780 470 L780 455" fill="none" stroke="#334155" stroke-width="2" stroke-linejoin="round"/><path d="M740 470 L780 470 L780 455" fill="none" stroke="#94a3b8" stroke-width="1.4" stroke-linejoin="round" class="flow-stream"/><circle id="glow-valve-cv01" cx="140" cy="50" r="20" fill="none" stroke="#ef4444" stroke-width="0" opacity="0"/><g class="cursor-pointer" onclick="setCascadeStage(1)"><use href="#vlv" transform="translate(140,50)"/><text x="140" y="73" fill="#94a3b8" font-size="9" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >CV-01</text></g><circle id="glow-valve-cv10" cx="100" cy="285" r="20" fill="none" stroke="#ef4444" stroke-width="0" opacity="0"/><g class="cursor-pointer" onclick="setCascadeStage(1)"><use href="#vlv" transform="translate(100,285)"/><text x="100" y="308" fill="#94a3b8" font-size="9" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >CV-10</text><text x="100" y="320" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#e2e8f0"><tspan id="v-cv10">--</tspan><tspan fill="#64748b" font-size="8"> %</tspan></text></g><use href="#vlv" transform="translate(800,100)"/><text x="800" y="123" fill="#94a3b8" font-size="9" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >CV-04</text><text x="800" y="135" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="#e2e8f0"><tspan id="v-cv04">--</tspan><tspan fill="#64748b" font-size="8"> %</tspan></text><use href="#vlv" transform="translate(620,400)"/><text x="620" y="423" fill="#94a3b8" font-size="9" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >CV-05</text><g id="domino-unit-2" class="cursor-pointer" onclick="setCascadeStage(2)"><rect id="glow-reactor" x="122" y="142" width="156" height="200" rx="34" fill="none" stroke="#ef4444" stroke-width="0" opacity="0"/><rect id="reactor-jacket" x="130" y="168" width="140" height="152" rx="24" fill="url(#jacketGrad)" stroke="#0284c7" stroke-width="1.3" stroke-dasharray="4 3"/><path d="M140,166 A60.0,16 0 0 1 260,166 L260,319 A60.0,16 0 0 1 140,319 Z" fill="url(#vesselGrad)" stroke="#64748b" stroke-width="2"/><g clip-path="url(#clip-reactor)"><rect x="140" y="205" width="120" height="135" fill="url(#liqGrad)"/><line x1="140" y1="205" x2="260" y2="205" stroke="#7dd3fc" stroke-opacity="0.5" stroke-width="1"/></g><rect x="190" y="128" width="20" height="24" rx="3" fill="#1e293b" stroke="#64748b" stroke-width="1.3"/><text x="200" y="144" fill="#94a3b8" font-size="8" font-family="'JetBrains Mono',monospace" text-anchor="middle" font-weight="600">M</text><line x1="200" y1="152" x2="200" y2="292" stroke="#94a3b8" stroke-width="2.2"/><line x1="176" y1="292" x2="224" y2="292" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round"/><line x1="180" y1="255" x2="220" y2="255" stroke="#cbd5e1" stroke-width="2.4" stroke-linecap="round"/><text x="200" y="190" fill="#f1f5f9" font-size="12" font-weight="700" text-anchor="middle" stroke="#0b1120" stroke-width="4" paint-order="stroke">R-101</text><text x="200" y="203" fill="#94a3b8" font-size="8.5" font-weight="400" text-anchor="middle" font-family="'JetBrains Mono',monospace" stroke="#0b1120" stroke-width="4" paint-order="stroke">CSTR REACTOR</text><rect id="reactor-domino-badge" x="146.0" y="310" width="108" height="15" rx="3" fill="#0b1120" stroke="#334155" stroke-width="1"/><text id="reactor-domino-text" x="200" y="320.5" fill="#10b981" font-size="8.5" font-family="'JetBrains Mono',monospace" font-weight="700" text-anchor="middle">NORMAL</text></g><line x1="292" y1="238" x2="260" y2="238" stroke="#475569" stroke-width="1" stroke-dasharray="2 2"/><circle id="bub-tt09" cx="292" cy="238" r="13" fill="#0b1120" stroke="#38bdf8" stroke-width="1.4"/><line x1="279" y1="238" x2="305" y2="238" stroke="#334155" stroke-width="0.8"/><text x="292" y="235" fill="#e2e8f0" font-size="8" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono',monospace" >TT</text><text x="292" y="247" fill="#94a3b8" font-size="8" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >09</text><text x="308" y="242" text-anchor="start" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="600" fill="#e2e8f0"><tspan id="v-tt09">--</tspan><tspan fill="#64748b" font-size="8.5" font-weight="400"> °C</tspan></text><line x1="292" y1="280" x2="260" y2="280" stroke="#475569" stroke-width="1" stroke-dasharray="2 2"/><circle id="bub-pt07" cx="292" cy="280" r="13" fill="#0b1120" stroke="#38bdf8" stroke-width="1.4"/><line x1="279" y1="280" x2="305" y2="280" stroke="#334155" stroke-width="0.8"/><text x="292" y="277" fill="#e2e8f0" font-size="8" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono',monospace" >PT</text><text x="292" y="289" fill="#94a3b8" font-size="8" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >07</text><text x="308" y="284" text-anchor="start" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="600" fill="#e2e8f0"><tspan id="v-pt07">--</tspan><tspan fill="#64748b" font-size="8.5" font-weight="400"> kPa</tspan></text><circle id="bub-ft01" cx="60" cy="22" r="13" fill="#0b1120" stroke="#38bdf8" stroke-width="1.4"/><line x1="47" y1="22" x2="73" y2="22" stroke="#334155" stroke-width="0.8"/><text x="60" y="19" fill="#e2e8f0" font-size="8" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono',monospace" >FT</text><text x="60" y="31" fill="#94a3b8" font-size="8" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >01</text><text x="78" y="26" text-anchor="start" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="600" fill="#e2e8f0"><tspan id="v-ft01">--</tspan><tspan fill="#64748b" font-size="8.5" font-weight="400"> kscmh</tspan></text><rect id="glow-condenser" x="392" y="75" width="86" height="60" rx="10" fill="none" stroke="#ef4444" stroke-width="0" opacity="0"/><rect x="404" y="88" width="62" height="34" rx="3" fill="url(#vesselGrad)" stroke="#64748b" stroke-width="1.6"/><path d="M404 88 C395 88 395 122 404 122Z" fill="#334155" stroke="#64748b" stroke-width="1.4"/><path d="M466 88 C475 88 475 122 466 122Z" fill="#334155" stroke="#64748b" stroke-width="1.4"/><path d="M408 98 L462 98 M408 105 L462 105 M408 112 L462 112" stroke="#0284c7" stroke-width="1" stroke-dasharray="3 2"/><line x1="420" y1="88" x2="420" y2="68" stroke="#7dd3fc" stroke-width="1.6"/><line x1="450" y1="122" x2="450" y2="142" stroke="#7dd3fc" stroke-width="1.6"/><text x="420" y="62" fill="#7dd3fc" font-size="8" font-weight="400" text-anchor="middle" font-family="'JetBrains Mono',monospace" >CW IN</text><text x="450" y="154" fill="#7dd3fc" font-size="8" font-weight="400" text-anchor="middle" font-family="'JetBrains Mono',monospace" >CW OUT</text><text x="435" y="47" fill="#f1f5f9" font-size="11" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono',monospace" >E-101</text><text x="435" y="58" fill="#94a3b8" font-size="8" font-weight="400" text-anchor="middle" font-family="'JetBrains Mono',monospace" >CONDENSER</text><g id="domino-unit-3" class="cursor-pointer" onclick="setCascadeStage(3)"><rect id="glow-separator" x="476" y="160" width="108" height="190" rx="30" fill="none" stroke="#ef4444" stroke-width="0" opacity="0"/><path d="M490,186 A40.0,16 0 0 1 570,186 L570,324 A40.0,16 0 0 1 490,324 Z" fill="url(#vesselGrad)" stroke="#64748b" stroke-width="2"/><g clip-path="url(#clip-sep)"><rect id="sep-liquid" x="490" y="255" width="80" height="85" fill="url(#liqGrad)"/></g><rect x="496" y="190" width="68" height="6" rx="1" fill="#334155" stroke="#64748b" stroke-width="0.8" stroke-dasharray="3 2"/><text x="530" y="226" fill="#f1f5f9" font-size="12" font-weight="700" text-anchor="middle" stroke="#0b1120" stroke-width="4" paint-order="stroke">V-101</text><text x="530" y="239" fill="#94a3b8" font-size="8.5" font-weight="400" text-anchor="middle" font-family="'JetBrains Mono',monospace" stroke="#0b1120" stroke-width="4" paint-order="stroke">V/L SEPARATOR</text><rect id="sep-domino-badge" x="492.0" y="312" width="76" height="15" rx="3" fill="#0b1120" stroke="#334155" stroke-width="1"/><text id="sep-domino-text" x="530" y="322.5" fill="#10b981" font-size="8.5" font-family="'JetBrains Mono',monospace" font-weight="700" text-anchor="middle">NORMAL</text></g><line x1="594" y1="262" x2="570" y2="262" stroke="#475569" stroke-width="1" stroke-dasharray="2 2"/><circle id="bub-lt12" cx="594" cy="262" r="13" fill="#0b1120" stroke="#38bdf8" stroke-width="1.4"/><line x1="581" y1="262" x2="607" y2="262" stroke="#334155" stroke-width="0.8"/><text x="594" y="259" fill="#e2e8f0" font-size="8" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono',monospace" >LT</text><text x="594" y="271" fill="#94a3b8" font-size="8" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >12</text><text x="594" y="292" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="600" fill="#e2e8f0"><tspan id="v-lt12">--</tspan><tspan fill="#64748b" font-size="8.5" font-weight="400"> %</tspan></text><g id="domino-unit-3b" class="cursor-pointer" onclick="setCascadeStage(3)"><circle id="glow-compressor" cx="690" cy="135" r="34" fill="none" stroke="#ef4444" stroke-width="0" opacity="0"/><circle cx="690" cy="135" r="24" fill="url(#vesselGrad)" stroke="#64748b" stroke-width="2"/><path d="M674 122 L706 129 M674 148 L706 141" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round"/><rect x="672" y="104" width="36" height="8" rx="2" fill="#1e293b" stroke="#64748b"/><text x="690" y="176" fill="#f1f5f9" font-size="11" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono',monospace" >C-101</text><text x="690" y="187" fill="#94a3b8" font-size="8" font-weight="400" text-anchor="middle" font-family="'JetBrains Mono',monospace" >RECYCLE COMPRESSOR</text></g><g id="domino-unit-4" class="cursor-pointer" onclick="setCascadeStage(4)"><rect id="glow-stripper" x="646" y="335" width="108" height="160" rx="30" fill="none" stroke="#ef4444" stroke-width="0" opacity="0"/><path d="M660,359 A40.0,14 0 0 1 740,359 L740,471 A40.0,14 0 0 1 660,471 Z" fill="url(#vesselGrad)" stroke="#64748b" stroke-width="2"/><g clip-path="url(#clip-strip)"><rect x="660" y="450" width="80" height="35" fill="url(#liqGrad)"/></g><line x1="666" y1="368" x2="734" y2="368" stroke="#475569" stroke-width="1.3"/><line x1="666" y1="380" x2="734" y2="380" stroke="#475569" stroke-width="1.3"/><line x1="666" y1="432" x2="734" y2="432" stroke="#475569" stroke-width="1.3"/><line x1="666" y1="444" x2="734" y2="444" stroke="#475569" stroke-width="1.3"/><text x="700" y="403" fill="#f1f5f9" font-size="12" font-weight="700" text-anchor="middle" stroke="#0b1120" stroke-width="4" paint-order="stroke">T-101</text><text x="700" y="415" fill="#94a3b8" font-size="8.5" font-weight="400" text-anchor="middle" font-family="'JetBrains Mono',monospace" stroke="#0b1120" stroke-width="4" paint-order="stroke">STRIPPER</text><rect id="stripper-domino-badge" x="664.0" y="455" width="72" height="15" rx="3" fill="#0b1120" stroke="#334155" stroke-width="1"/><text id="stripper-domino-text" x="700" y="465.5" fill="#10b981" font-size="8.5" font-family="'JetBrains Mono',monospace" font-weight="700" text-anchor="middle">ON-SPEC</text><rect x="745" y="422" width="70" height="34" rx="3" fill="url(#vesselGrad)" stroke="#64748b" stroke-width="1.5"/><path d="M750 432 L810 432 M750 440 L810 440 M750 448 L810 448" stroke="#b45309" stroke-width="1" stroke-dasharray="3 2"/><text x="780" y="416" fill="#cbd5e1" font-size="8.5" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >E-102 REBOILER</text></g><line x1="830" y1="524" x2="830" y2="550" stroke="#475569" stroke-width="1" stroke-dasharray="2 2"/><circle id="bub-ai11" cx="830" cy="524" r="13" fill="#0b1120" stroke="#38bdf8" stroke-width="1.4"/><line x1="817" y1="524" x2="843" y2="524" stroke="#334155" stroke-width="0.8"/><text x="830" y="521" fill="#e2e8f0" font-size="8" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono',monospace" >AI</text><text x="830" y="533" fill="#94a3b8" font-size="8" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono',monospace" >11</text><text x="848" y="528" text-anchor="start" font-family="'JetBrains Mono',monospace" font-size="11" font-weight="600" fill="#e2e8f0"><tspan id="v-ai11">--</tspan><tspan fill="#64748b" font-size="8.5" font-weight="400"> % G/H</tspan></text><g id="fault-callout" class="pointer-events-none" opacity="0"><line id="fc-line" x1="0" y1="0" x2="0" y2="0" stroke="#f43f5e" stroke-width="1.8" marker-end="url(#arr-red)"/><rect id="fc-box" x="0" y="0" width="150" height="48" rx="5" fill="#1a0b12" fill-opacity="0.96" stroke="#f43f5e" stroke-width="1.4"/><rect id="fc-bar" x="0" y="0" width="4" height="48" rx="2" fill="#f43f5e"/><text id="fc-title" x="0" y="0" fill="#fda4af" font-size="9" font-weight="700" font-family="'JetBrains Mono',monospace"></text><text id="fc-l1" x="0" y="0" fill="#f1f5f9" font-size="9.5" font-weight="600" font-family="'JetBrains Mono',monospace"></text><text id="fc-l2" x="0" y="0" fill="#94a3b8" font-size="9" font-family="'JetBrains Mono',monospace"></text></g><rect x="8" y="524" width="262" height="44" rx="4" fill="#0b1120" stroke="#334155"/><line x1="8" y1="540" x2="270" y2="540" stroke="#334155"/><text x="16" y="535" fill="#e2e8f0" font-size="9" font-weight="700" text-anchor="start" font-family="'JetBrains Mono',monospace" >TENNESSEE EASTMAN PROCESS · DCS OVERVIEW</text><text x="16" y="552" fill="#94a3b8" font-size="8.5" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >DWG PFD-001  REV C</text><text x="16" y="563" fill="#64748b" font-size="8" font-weight="400" text-anchor="start" font-family="'JetBrains Mono',monospace" >BASIS: DOWNS &amp; VOGEL (1993) BASE CASE</text><text x="262" y="552" fill="#94a3b8" font-size="8.5" font-weight="400" text-anchor="end" font-family="'JetBrains Mono',monospace" >SHEET 1/1</text></svg></div>
+    </section>
+
+    <!-- RIGHT: COMPACT DOMINO RAIL & DETECTOR CARDS (27% WIDTH) -->
+    <aside class="flex-1 bg-[#080c14] rounded-lg border border-slate-800/90 p-2.5 flex flex-col justify-between gap-2 overflow-y-auto min-w-[290px] shadow-lg">
+      
+      <!-- Upper Section: Domino Pathway Steps -->
+      <div class="flex flex-col gap-1.5 shrink-0">
+        <div class="flex items-center justify-between border-b border-slate-800/90 pb-1">
+          <span class="text-[10px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span> Domino Pathway
+          </span>
+          <span id="current-elapsed-badge" class="text-[9px] font-mono-val px-1.5 py-0.2 rounded bg-slate-900 border border-slate-800 text-sky-300">
+            +0.0 min
+          </span>
+        </div>
+
+        <div class="space-y-1">
+          <!-- Step 1 -->
+          <div id="chain-card-1" class="p-1.5 rounded border border-slate-800/80 bg-slate-900/40 transition-all">
+            <div class="flex items-center justify-between">
+              <span class="text-[9px] font-mono-val text-slate-400 font-semibold">1 · t=3m</span>
+              <span class="text-[9px] font-mono-val text-sky-400" id="chain-stat-1">Flow = 0.0</span>
+            </div>
+            <div class="text-[10px] font-medium text-slate-200" id="chain-title-1">Feed Cut / Origin</div>
+            <p class="text-[9px] text-slate-400 leading-snug" id="chain-desc-1">CV-01 slams shut. Reactant A supply halts.</p>
+          </div>
+
+          <!-- Step 2 -->
+          <div id="chain-card-2" class="p-1.5 rounded border border-slate-800/80 bg-slate-900/40 transition-all">
+            <div class="flex items-center justify-between">
+              <span class="text-[9px] font-mono-val text-slate-400 font-semibold">2 · t=12m</span>
+              <span class="text-[9px] font-mono-val text-slate-400" id="chain-stat-2">PT-07: -120 kPa</span>
+            </div>
+            <div class="text-[10px] font-medium text-slate-200" id="chain-title-2">Reactor Depressurizes</div>
+            <p class="text-[9px] text-slate-400 leading-snug" id="chain-desc-2">Stoichiometry lost. Kinetics stall.</p>
+          </div>
+
+          <!-- Step 3 -->
+          <div id="chain-card-3" class="p-1.5 rounded border border-slate-800/80 bg-slate-900/40 transition-all">
+            <div class="flex items-center justify-between">
+              <span class="text-[9px] font-mono-val text-slate-400 font-semibold">3 · t=27m</span>
+              <span class="text-[9px] font-mono-val text-slate-400" id="chain-stat-3">CV-04: 100%</span>
+            </div>
+            <div class="text-[10px] font-medium text-slate-200" id="chain-title-3">Recycle Loop Surge</div>
+            <p class="text-[9px] text-slate-400 leading-snug" id="chain-desc-3">Unreacted C/D build. Purge saturates.</p>
+          </div>
+
+          <!-- Step 4 -->
+          <div id="chain-card-4" class="p-1.5 rounded border border-slate-800/80 bg-slate-900/40 transition-all">
+            <div class="flex items-center justify-between">
+              <span class="text-[9px] font-mono-val text-slate-400 font-semibold">4 · t=54m</span>
+              <span class="text-[9px] font-mono-val text-rose-400" id="chain-stat-4">Purity &lt; 90%</span>
+            </div>
+            <div class="text-[10px] font-medium text-slate-200" id="chain-title-4">Product Loss & Trip</div>
+            <p class="text-[9px] text-slate-400 leading-snug" id="chain-desc-4">Stripper bottom fails. Plant interlock trip.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lower Section: Real-Time Model Diagnostics -->
+      <div class="flex flex-col gap-1.5 pt-1 border-t border-slate-800/90 shrink-0">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-semibold text-slate-300 uppercase tracking-wider">Model Alarm Status</span>
+          <span class="text-[9px] font-mono-val text-slate-500">Live Decision</span>
+        </div>
+
+        <div class="space-y-1">
+          <!-- PCA SPE -->
+          <div class="p-1.5 rounded bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+            <div class="min-w-0 pr-1">
+              <div class="text-[10px] font-medium text-slate-200 truncate flex items-center gap-1">
+                PCA Subspace (SPE Q)
+              </div>
+              <div class="text-[9px] text-slate-400 truncate" id="pca-reaction-desc">Residual normal across 35 PCs.</div>
+            </div>
+            <span id="badge-pca" class="px-1.5 py-0.5 rounded text-[9px] font-mono-val font-semibold bg-emerald-950 text-emerald-300 border border-emerald-500/30 shrink-0">
+              NORMAL
+            </span>
+          </div>
+
+          <!-- Rule-Based -->
+          <div class="p-1.5 rounded bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+            <div class="min-w-0 pr-1">
+              <div class="text-[10px] font-medium text-slate-200">Rule-Based Limits (3σ)</div>
+              <div class="text-[9px] text-slate-400 truncate" id="rule-reaction-desc">All 50 sensors in ±3σ bounds.</div>
+            </div>
+            <span id="badge-rule" class="px-1.5 py-0.5 rounded text-[9px] font-mono-val font-semibold bg-emerald-950 text-emerald-300 border border-emerald-500/30 shrink-0">
+              NORMAL
+            </span>
+          </div>
+
+          <!-- Isolation Forest -->
+          <div class="p-1.5 rounded bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+            <div class="min-w-0 pr-1">
+              <div class="text-[10px] font-medium text-slate-200">Isolation Forest (Tree)</div>
+              <div class="text-[9px] text-slate-400 truncate" id="if-reaction-desc">Path lengths match baseline.</div>
+            </div>
+            <span id="badge-if" class="px-1.5 py-0.5 rounded text-[9px] font-mono-val font-semibold bg-slate-900 text-slate-400 border border-slate-800 shrink-0">
+              NORMAL
+            </span>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- COMPACT BOTTOM STATUS RIBBON -->
+  <footer class="h-7 bg-[#090d16] border-t border-slate-800 px-4 flex items-center justify-between shrink-0 text-[10px] font-mono-val text-slate-400">
+    <div class="flex items-center gap-2">
+      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+      <span class="text-slate-300">Early Warning Horizon:</span>
+      <span id="early-warning-lead" class="text-emerald-400 font-semibold">PCA SPE triggers at t=3 min (+51.0 min before downstream trip)</span>
+    </div>
+    <div class="flex items-center gap-3 text-slate-500">
+      <span>TEP Benchmark · Downs & Vogel (1993)</span>
+      <span>Harvard Dataverse (Rieth et al.)</span>
+    </div>
+  </footer>
+
+  <script>
+    const cascadeState = {
+      scenario: "6",
+      stage: 0,
+      isPlaying: false,
+      intervalId: null
+    };
+
+    const scenarios = {
+      "6": {
+        name: "IDV(6) Reactant A Feed Stream Loss",
+        earlyWarningSummary: "PCA SPE triggers at t=3.0 min (+51.0 min before downstream trip)", 
+        stages: [
+          {
+            timeMin: 0,
+            badge: "S0 · NOMINAL",
+            location: "Plant in Chemical Equilibrium",
+            story: "All continuous units (R-101, E-101, V-101, C-101, T-101) in closed-loop steady state.",
+            reactorStatus: "NORMAL",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "NORMAL",
+            pcaDesc: "SPE Q = 2.14 (below 5.75 threshold).",
+            ruleStatus: "NORMAL",
+            ruleDesc: "All 50 sensors within ±3σ limits.",
+            ifStatus: "NORMAL",
+            ifDesc: "Path lengths match nominal density.",
+            activeArrows: [],
+            impactedUnits: [],
+            flowColorFeedA: "#38bdf8",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 3,
+            badge: "S1 · INLET VALVE FAILURE (t=3m)",
+            location: "Feed Line Stream 1 (CV-01)",
+            story: "Reactant A feed valve CV-01 slams shut. Flow drops to zero instantly.",
+            reactorStatus: "HOLDING",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "ALARM",
+            pcaDesc: "SPE Q = 88.5 spikes instantly.",
+            ruleStatus: "ALARM",
+            ruleDesc: "CV-01 breaches -3σ zero bound.",
+            ifStatus: "ALARM",
+            ifDesc: "Score elevates as FT-01 drops.",
+            activeArrows: ["domino-arrow-1-2"],
+            impactedUnits: ["glow-valve-cv01"],
+            flowColorFeedA: "#f43f5e",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 12,
+            badge: "S2 · REACTOR COLLAPSE (t=12m)",
+            location: "CSTR Reactor R-101",
+            story: "Lack of reactant A stalls reaction. Pressure PT-07 plummets (-150 kPa).",
+            reactorStatus: "DEPRESSURIZING",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "ALARM",
+            pcaDesc: "PT-07 & TT-09 trajectory breaks manifold.",
+            ruleStatus: "ALARM",
+            ruleDesc: "PT-07 drops past 2500 kPa minimum.",
+            ifStatus: "ALARM",
+            ifDesc: "Outlier tree isolation confirmed.",
+            activeArrows: ["domino-arrow-1-2", "domino-arrow-2-3"],
+            impactedUnits: ["glow-valve-cv01", "glow-reactor"],
+            flowColorFeedA: "#f43f5e",
+            flowColorEffluent: "#fbbf24",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 27,
+            badge: "S3 · RECYCLE SURGE (t=27m)",
+            location: "Flash Drum V-101 & Compressor",
+            story: "Unreacted C & D build in separator. Purge valve CV-04 opens 100% to relieve inventory.",
+            reactorStatus: "STARVED",
+            sepStatus: "OFFGAS SURGE",
+            stripperStatus: "DEGRADING",
+            pcaStatus: "CRITICAL",
+            pcaDesc: "Whole-plant correlation breakdown.",
+            ruleStatus: "MULTIPLE",
+            ruleDesc: "Purge valve saturated at 100%.",
+            ifStatus: "ALARM",
+            ifDesc: "Recycle subspace breach.",
+            activeArrows: ["domino-arrow-1-2", "domino-arrow-2-3", "domino-arrow-3-4"],
+            impactedUnits: ["glow-valve-cv01", "glow-reactor", "glow-separator", "glow-compressor"],
+            flowColorFeedA: "#f43f5e",
+            flowColorEffluent: "#f43f5e",
+            flowColorProduct: "#fbbf24",
+            productText: "STR-11 [DEGRADING]"
+          },
+          {
+            timeMin: 54,
+            badge: "S4 · PLANT INTERLOCK TRIP (t=54m)",
+            location: "Stripper Column T-101 (Shutdown)",
+            story: "Stripper bottoms product fails purity spec (<85%). Automated interlocks trip the plant.",
+            reactorStatus: "TRIPPED",
+            sepStatus: "TRIPPED",
+            stripperStatus: "OFF-SPEC TRIP",
+            pcaStatus: "EMERGENCY",
+            pcaDesc: "Plant trip. Earliest alarm was at t=3 min.",
+            ruleStatus: "EMERGENCY",
+            ruleDesc: "Cascading multi-unit alarms.",
+            ifStatus: "EMERGENCY",
+            ifDesc: "Global trip state confirmed.",
+            activeArrows: ["domino-arrow-1-2", "domino-arrow-2-3", "domino-arrow-3-4"],
+            impactedUnits: ["glow-valve-cv01", "glow-reactor", "glow-separator", "glow-compressor", "glow-stripper"],
+            flowColorFeedA: "#f43f5e",
+            flowColorEffluent: "#f43f5e",
+            flowColorProduct: "#ef4444",
+            productText: "STR-11 [TRIP / OFF-SPEC]"
+          }
+        ]
+      },
+      "4": {
+        name: "IDV(4) Reactor Coolant Temp Step Drop",
+        earlyWarningSummary: "PCA SPE triggers at t=3.0 min (Detects 12σ actuator throttling while IF is blind)", 
+        stages: [
+          {
+            timeMin: 0,
+            badge: "S0 · NOMINAL",
+            location: "Coolant Loop in Equilibrium",
+            story: "Coolant at 25°C. Cooling valve CV-10 at 41% holds reactor at 120.4°C.",
+            reactorStatus: "NORMAL",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "NORMAL",
+            pcaDesc: "TT-09 vs CV-10 correlation nominal.",
+            ruleStatus: "NORMAL",
+            ruleDesc: "Within nominal statistical bands.",
+            ifStatus: "NORMAL",
+            ifDesc: "Nominal density state.",
+            activeArrows: [],
+            impactedUnits: [],
+            flowColorFeedA: "#38bdf8",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 3,
+            badge: "S1 · STEP DROP & MASKING (t=3m)",
+            location: "Cooling Valve CV-10",
+            story: "Coolant drops. PID loop throttles CV-10 to 34% (>12σ) to prevent reactor temp drop.",
+            reactorStatus: "MASKED (120.4°C)",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "ALARM",
+            pcaDesc: "PCA flags broken CV-10 vs TT-09 correlation!",
+            ruleStatus: "ALARM",
+            ruleDesc: "CV-10 breaches tight 3σ band.",
+            ifStatus: "BLIND (3.2%)",
+            ifDesc: "Axis splits fooled: TT-09 is normal.",
+            activeArrows: ["domino-arrow-1-2"],
+            impactedUnits: ["glow-valve-cv10"],
+            flowColorFeedA: "#38bdf8",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 12,
+            badge: "S2 · THERMAL GRADIENT (t=12m)",
+            location: "Reactor Jacket R-101",
+            story: "Cooling margin exhausted. Jacket return TT-21 drops.",
+            reactorStatus: "CV-10 THROTTLED",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "ALARM",
+            pcaDesc: "Recon error focused in CV-10 & TT-21.",
+            ruleStatus: "ALARM",
+            ruleDesc: "Cooling valve pegged at 34%.",
+            ifStatus: "BLIND",
+            ifDesc: "Model still considers run nominal.",
+            activeArrows: ["domino-arrow-1-2"],
+            impactedUnits: ["glow-valve-cv10", "glow-reactor"],
+            flowColorFeedA: "#38bdf8",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 27,
+            badge: "S3 · DOWNSTREAM STABILITY (t=27m)",
+            location: "Separation Train (V-101, T-101)",
+            story: "PID loop held reactor stable, so downstream vapor remains intact. Only cooling loop strained.",
+            reactorStatus: "LOOP STRAINED",
+            sepStatus: "STABLE",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "ALARM",
+            pcaDesc: "Maintains clear residual warning.",
+            ruleStatus: "ALARM",
+            ruleDesc: "Single valve alarm active.",
+            ifStatus: "BLIND",
+            ifDesc: "Tree fails to isolate.",
+            activeArrows: [],
+            impactedUnits: ["glow-valve-cv10"],
+            flowColorFeedA: "#38bdf8",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 54,
+            badge: "S4 · HIGH-RISK EQUILIBRIUM (t=54m)",
+            location: "Constrained Operating Point",
+            story: "Plant operates with valve near lower limit. Secondary shock will cause thermal trip.",
+            reactorStatus: "MARGIN ZERO",
+            sepStatus: "STABLE",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "CONFIRMED",
+            pcaDesc: "Continuous PCA alarm maintained.",
+            ruleStatus: "ALARM (CV-10)",
+            ruleDesc: "Rule active on valve only.",
+            ifStatus: "BLIND (823m)",
+            ifDesc: "Complete failure on this disturbance.",
+            activeArrows: [],
+            impactedUnits: ["glow-valve-cv10", "glow-reactor"],
+            flowColorFeedA: "#38bdf8",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H - RISK]"
+          }
+        ]
+      },
+      "1": {
+        name: "IDV(1) A/C Feed Ratio Step Shift",
+        earlyWarningSummary: "PCA SPE triggers at t=3.3 min (+50.7 min lead time before product stream flare diversion)", 
+        stages: [
+          {
+            timeMin: 0,
+            badge: "S0 · NOMINAL",
+            location: "Feed Stoichiometry Balanced",
+            story: "Reactant A and C fed in balance. Products G and H yielded at design rates.",
+            reactorStatus: "NORMAL",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "NORMAL",
+            pcaDesc: "Feed covariance balanced.",
+            ruleStatus: "NORMAL",
+            ruleDesc: "Within ±3σ tolerance.",
+            ifStatus: "NORMAL",
+            ifDesc: "Baseline path lengths.",
+            activeArrows: [],
+            impactedUnits: [],
+            flowColorFeedA: "#38bdf8",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 3,
+            badge: "S1 · FEED STEP DISRUPTION (t=3m)",
+            location: "Feed Line Stream 4",
+            story: "A/C feed ratio shifts. Excess reactant A enters relative to C.",
+            reactorStatus: "NORMAL",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "ALARM (+3.3m)",
+            pcaDesc: "Early flag as feed covariance shifts.",
+            ruleStatus: "NORMAL",
+            ruleDesc: "Feeds still inside broad 1D bands.",
+            ifStatus: "NORMAL",
+            ifDesc: "Not yet past density threshold.",
+            activeArrows: ["domino-arrow-1-2"],
+            impactedUnits: ["glow-valve-cv01"],
+            flowColorFeedA: "#fbbf24",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 12,
+            badge: "S2 · BYPRODUCT ELEVATION (t=12m)",
+            location: "Reactor R-101",
+            story: "Excess A drives side reactions producing byproduct F. Reaction heat increases.",
+            reactorStatus: "BYPRODUCT HIGH",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "ALARM",
+            pcaDesc: "Residual accumulates across kinetics.",
+            ruleStatus: "ALARM (+16.7m)",
+            ruleDesc: "Cooling valve CV-10 opens past 3σ.",
+            ifStatus: "ALARM (+23.7m)",
+            ifDesc: "Detects outlier as reactor swings.",
+            activeArrows: ["domino-arrow-1-2", "domino-arrow-2-3"],
+            impactedUnits: ["glow-valve-cv01", "glow-reactor"],
+            flowColorFeedA: "#fbbf24",
+            flowColorEffluent: "#fbbf24",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 27,
+            badge: "S3 · PURGE SATURATION (t=27m)",
+            location: "Separator V-101 & Compressor",
+            story: "Byproduct F carries into separator overhead. Purge gas composition AT-04 spikes.",
+            reactorStatus: "IMBALANCE",
+            sepStatus: "PURGE SPIKE",
+            stripperStatus: "DRIFTING",
+            pcaStatus: "CRITICAL",
+            pcaDesc: "Full-plant composition breach.",
+            ruleStatus: "MULTIPLE",
+            ruleDesc: "Purge composition high limit.",
+            ifStatus: "ALARM",
+            ifDesc: "Purge channel isolated as outlier.",
+            activeArrows: ["domino-arrow-1-2", "domino-arrow-2-3", "domino-arrow-3-4"],
+            impactedUnits: ["glow-valve-cv01", "glow-reactor", "glow-separator", "glow-compressor"],
+            flowColorFeedA: "#fbbf24",
+            flowColorEffluent: "#fbbf24",
+            flowColorProduct: "#fbbf24",
+            productText: "STR-11 [BYPRODUCT CONTAM]"
+          },
+          {
+            timeMin: 54,
+            badge: "S4 · PURITY LOSS & DIVERSION (t=54m)",
+            location: "Stripper Column T-101 & Product",
+            story: "Stripper cannot remove excess byproduct. Product G/H ratio fails quality spec.",
+            reactorStatus: "TRIPPED",
+            sepStatus: "OFF-SPEC",
+            stripperStatus: "PURITY TRIP",
+            pcaStatus: "EMERGENCY",
+            pcaDesc: "PCA provided 51m intervention window.",
+            ruleStatus: "EMERGENCY",
+            ruleDesc: "Product stream diverts to flare.",
+            ifStatus: "EMERGENCY",
+            ifDesc: "Global trip confirmed.",
+            activeArrows: ["domino-arrow-1-2", "domino-arrow-2-3", "domino-arrow-3-4"],
+            impactedUnits: ["glow-valve-cv01", "glow-reactor", "glow-separator", "glow-compressor", "glow-stripper"],
+            flowColorFeedA: "#fbbf24",
+            flowColorEffluent: "#f43f5e",
+            flowColorProduct: "#ef4444",
+            productText: "STR-11 [OFF-SPEC BYPRODUCT]"
+          }
+        ]
+      },
+      "8": {
+        name: "IDV(8) A/B/C Feed Composition Random Drift",
+        earlyWarningSummary: "Dynamic PCA & CUSUM trigger at t=58.2 min (+31.8 min before stripper bottoms off-spec trip)",
+        stages: [
+          {
+            timeMin: 0,
+            badge: "S0 · NOMINAL",
+            location: "Feed Stoichiometry Balanced",
+            story: "Reactant feed composition at design specification. All 50 continuous sensors in nominal baseline envelope.",
+            reactorStatus: "NORMAL",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "NORMAL",
+            pcaDesc: "SPE Q = 2.14 (below 5.75 threshold).",
+            ruleStatus: "NORMAL",
+            ruleDesc: "All 50 sensors within ±3σ limits.",
+            ifStatus: "NORMAL",
+            ifDesc: "Path lengths match nominal density.",
+            activeArrows: [],
+            impactedUnits: [],
+            flowColorFeedA: "#38bdf8",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 15,
+            badge: "S1 · SLOW COMPOSITION DRIFT (t=15m)",
+            location: "Feed Line Stream 4 & Kinetics",
+            story: "Feed A/B/C ratio experiences non-stationary random drift. Individual sensors remain well inside ±3σ bounds.",
+            reactorStatus: "NOMINAL",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "MONITORING",
+            pcaDesc: "Subtle covariance drift; dynamic slope registered.",
+            ruleStatus: "NORMAL",
+            ruleDesc: "All sensors well within 3σ limits.",
+            ifStatus: "NORMAL",
+            ifDesc: "Axis-aligned splits observe no isolated points.",
+            activeArrows: ["domino-arrow-1-2"],
+            impactedUnits: ["glow-valve-cv01"],
+            flowColorFeedA: "#fbbf24",
+            flowColorEffluent: "#38bdf8",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 35,
+            badge: "S2 · KINETIC MANIFOLD SHIFT (t=35m)",
+            location: "Reactor R-101",
+            story: "Persistent composition shift alters reaction rate. Temperature and pressure begin correlated slow divergence.",
+            reactorStatus: "KINETIC DRIFT",
+            sepStatus: "NORMAL",
+            stripperStatus: "ON-SPEC",
+            pcaStatus: "ALARM (+58m)",
+            pcaDesc: "DPCA / CUSUM crosses threshold at t=58.2m.",
+            ruleStatus: "NORMAL",
+            ruleDesc: "Static 1D sensors still < 2σ.",
+            ifStatus: "NORMAL",
+            ifDesc: "Outlier score diluted across 50 dimensions.",
+            activeArrows: ["domino-arrow-1-2", "domino-arrow-2-3"],
+            impactedUnits: ["glow-valve-cv01", "glow-reactor"],
+            flowColorFeedA: "#fbbf24",
+            flowColorEffluent: "#fbbf24",
+            flowColorProduct: "#34d399",
+            productText: "STR-11 [PRODUCT G & H]"
+          },
+          {
+            timeMin: 65,
+            badge: "S3 · INVENTORY & RECYCLE SWELL (t=65m)",
+            location: "Separator V-101 & Recycle Loop",
+            story: "Unreacted feed components accumulate in recycle loop. Separator level LT-12 drifts to 62%, purge valve opens to 51%.",
+            reactorStatus: "STRAINED",
+            sepStatus: "INVENTORY RISE",
+            stripperStatus: "DEGRADING",
+            pcaStatus: "CRITICAL",
+            pcaDesc: "Multi-loop correlation divergence confirmed.",
+            ruleStatus: "ALARM (+68m)",
+            ruleDesc: "LT-12 level breaches high 3σ threshold.",
+            ifStatus: "ALARM (+74m)",
+            ifDesc: "High inventory finally isolated.",
+            activeArrows: ["domino-arrow-1-2", "domino-arrow-2-3", "domino-arrow-3-4"],
+            impactedUnits: ["glow-valve-cv01", "glow-reactor", "glow-separator"],
+            flowColorFeedA: "#fbbf24",
+            flowColorEffluent: "#fbbf24",
+            flowColorProduct: "#fbbf24",
+            productText: "STR-11 [PURITY SLIPPING]"
+          },
+          {
+            timeMin: 90,
+            badge: "S4 · PRODUCT OFF-SPEC / DIVERSION (t=90m)",
+            location: "Stripper Column T-101 & Product Stream",
+            story: "Stripper bottoms product drops below 90% purity. Economic cost accumulates; stream diverted to recycle.",
+            reactorStatus: "DRIFTED",
+            sepStatus: "OFF-SPEC",
+            stripperStatus: "PURITY BREACH",
+            pcaStatus: "EMERGENCY",
+            pcaDesc: "Early warning was active since t=58.2 min.",
+            ruleStatus: "EMERGENCY",
+            ruleDesc: "Product stream diverts to off-spec tank.",
+            ifStatus: "ALARM",
+            ifDesc: "Late outlier detection.",
+            activeArrows: ["domino-arrow-1-2", "domino-arrow-2-3", "domino-arrow-3-4"],
+            impactedUnits: ["glow-valve-cv01", "glow-reactor", "glow-separator", "glow-stripper"],
+            flowColorFeedA: "#fbbf24",
+            flowColorEffluent: "#f43f5e",
+            flowColorProduct: "#ef4444",
+            productText: "STR-11 [OFF-SPEC STREAM]"
+          }
+        ]
+      }
+    };
+
+
+    const readouts = {
+      "6": {ft01:[0.25,0,0,0,0], pt07:[2705,2698,2585,2480,2310], tt09:[120.4,120.3,118.9,116.2,112.0], cv10:[41,41,40,38,35], lt12:[50,50,52,68,81], cv04:[38,38,52,100,100], ai11:[98.2,98.1,97.0,92.5,84.1]},
+      "4": {ft01:[0.25,0.25,0.25,0.25,0.25], pt07:[2705,2705,2701,2698,2695], tt09:[120.4,120.4,120.3,120.3,120.2], cv10:[41,34,34,34,34], lt12:[50,50,50,51,51], cv04:[38,38,38,39,40], ai11:[98.2,98.2,98.1,98.0,97.9]},
+      "1": {ft01:[0.25,0.31,0.31,0.31,0.31], pt07:[2705,2712,2745,2790,2860], tt09:[120.4,120.5,121.6,123.3,126.0], cv10:[41,41,52,66,80], lt12:[50,50,53,60,70], cv04:[38,38,45,72,95], ai11:[98.2,98.0,96.0,93.0,88.0]},
+      "8": {ft01:[0.25,0.25,0.26,0.28,0.30], pt07:[2705,2708,2718,2735,2760], tt09:[120.4,120.5,120.8,121.2,121.8], cv10:[41,41,43,46,52], lt12:[50,51,54,62,74], cv04:[38,38,42,51,65], ai11:[98.2,98.1,97.4,94.8,89.2]}
+    };
+    const fmt = {ft01:2, pt07:0, tt09:1, cv10:0, lt12:0, cv04:0, ai11:1};
+    function renderReadouts() {
+      const r = readouts[cascadeState.scenario], st = cascadeState.stage;
+      Object.keys(r).forEach(k => {
+        const v = r[k][st], nom = r[k][0];
+        const el = document.getElementById('v-' + k);
+        if (el) el.textContent = v.toFixed(fmt[k]);
+        const rel = Math.abs(v - nom) / Math.max(Math.abs(nom), 1e-6);
+        const col = rel > 0.06 ? '#f43f5e' : rel > 0.015 ? '#fbbf24' : '#38bdf8';
+        const b = document.getElementById('bub-' + k);
+        if (b) b.setAttribute('stroke', col);
+        if (el) el.setAttribute('fill', rel > 0.06 ? '#fda4af' : rel > 0.015 ? '#fde68a' : '#e2e8f0');
+      });
+      const lvl = r.lt12[st], h = lvl / 100 * 150;
+      const liq = document.getElementById('sep-liquid');
+      liq.setAttribute('y', 340 - h); liq.setAttribute('height', h);
+      [1,2,3,4].forEach(i => {
+        const sd = scenarios[cascadeState.scenario].stages[i];
+        document.getElementById('chain-title-' + i).textContent = sd.badge.split('·')[1].split('(')[0].trim();
+        document.getElementById('chain-desc-' + i).textContent = sd.story;
+        document.getElementById('chain-stat-' + i).textContent = 't=' + sd.timeMin + 'm';
+      });
+    }
+
+    const calloutAnchors = {
+      cv01:    {box:[185,34],  from:[185,56],  to:[155,50]},
+      cv10:    {box:[14,354],  from:[100,354], to:[100,332]},
+      reactor: {box:[14,354],  from:[120,354], to:[148,328]},
+      sep:     {box:[612,205], from:[612,228], to:[576,228]},
+      strip:   {box:[762,350], from:[762,373], to:[744,373]}
+    };
+    const callouts = {
+      "6": [null,
+        {a:'cv01',    l1:'CV-01 closed',               l2:'FT-01 = 0 · A feed lost'},
+        {a:'reactor', l1:'Reactor pressure collapsing', l2:'PT-07 down 150 kPa'},
+        {a:'sep',     l1:'Purge CV-04 saturated 100%', l2:'Recycle inventory surge'},
+        {a:'strip',   l1:'Purity below 85% spec',      l2:'Interlock trips plant'}],
+      "4": [null,
+        {a:'cv10',    l1:'CV-10 throttled to 34%',     l2:'Coolant temp step drop'},
+        {a:'reactor', l1:'Cooling margin exhausted',   l2:'Jacket return TT-21 falling'},
+        {a:'cv10',    l1:'Downstream still stable',    l2:'Cooling loop strained'},
+        {a:'reactor', l1:'Operating margin is zero',   l2:'Next shock = thermal trip'}],
+      "1": [null,
+        {a:'cv01',    l1:'A/C feed ratio shifted',     l2:'Excess A entering reactor'},
+        {a:'reactor', l1:'Byproduct F rising',         l2:'Reaction heat increasing'},
+        {a:'sep',     l1:'Purge AT-04 spiking',        l2:'Byproduct F in overhead'},
+        {a:'strip',   l1:'G/H purity off-spec',        l2:'Product diverted to flare'}],
+      "8": [null,
+        {a:'cv01',    l1:'Feed composition drifting',  l2:'A/B/C ratio slipping from spec'},
+        {a:'reactor', l1:'Reaction kinetics diverging', l2:'CUSUM / DPCA registers early slope'},
+        {a:'sep',     l1:'Recycle inventory building', l2:'LT-12 up to 62% · CV-04 at 51%'},
+        {a:'strip',   l1:'Product purity degraded',     l2:'G/H off-spec · Economic penalty'}]
+    };
+    function renderCallout() {
+      const g = document.getElementById('fault-callout');
+      const c = callouts[cascadeState.scenario][cascadeState.stage];
+      if (!c) { g.setAttribute('opacity', '0'); g.classList.remove('pop'); return; }
+      const an = calloutAnchors[c.a];
+      const title = scenarios[cascadeState.scenario].stages[cascadeState.stage].badge.split('(')[0].trim();
+      const w = Math.max(title.length * 5.4, c.l1.length * 5.8, c.l2.length * 5.4) + 22, h = 48;
+      const [x, y] = an.box;
+      const set = (id, o) => { const e = document.getElementById(id); Object.entries(o).forEach(([k, v]) => e.setAttribute(k, v)); return e; };
+      set('fc-box', {x, y, width: w, height: h});
+      set('fc-bar', {x, y, height: h});
+      set('fc-line', {x1: an.from[0], y1: an.from[1], x2: an.to[0], y2: an.to[1]});
+      set('fc-title', {x: x + 12, y: y + 14}).textContent = title;
+      set('fc-l1', {x: x + 12, y: y + 28}).textContent = c.l1;
+      set('fc-l2', {x: x + 12, y: y + 41}).textContent = c.l2;
+      const crit = cascadeState.stage === 4;
+      const col = crit ? '#f43f5e' : '#fbbf24';
+      document.getElementById('fc-box').setAttribute('stroke', col);
+      document.getElementById('fc-bar').setAttribute('fill', col);
+      document.getElementById('fc-line').setAttribute('stroke', col);
+      document.getElementById('fc-title').setAttribute('fill', crit ? '#fda4af' : '#fde68a');
+      g.setAttribute('opacity', '1');
+      g.classList.remove('pop'); void g.getBoundingClientRect(); g.classList.add('pop');
+    }
+
+    function renderStage() {
+      renderReadouts();
+      renderCallout();
+      const scen = scenarios[cascadeState.scenario];
+      const ewEl = document.getElementById('early-warning-lead');
+      if (ewEl && scen.earlyWarningSummary) {
+        ewEl.textContent = scen.earlyWarningSummary;
+      }
+      const data = scen.stages[cascadeState.stage];
+
+      document.getElementById('cascade-slider').value = cascadeState.stage;
+      document.getElementById('display-time-elapsed').textContent = `+${data.timeMin.toFixed(0)}m`;
+      document.getElementById('current-elapsed-badge').textContent = `+${data.timeMin.toFixed(0)} min`;
+
+      document.querySelectorAll('.stage-btn').forEach(btn => {
+        const s = parseInt(btn.getAttribute('data-stage'), 10);
+        if (s === cascadeState.stage) {
+          btn.className = "stage-btn px-1.5 py-0.5 rounded text-[10px] font-mono-val border bg-sky-950/90 border-sky-500 text-sky-200 font-semibold shadow";
+        } else if (s < cascadeState.stage) {
+          btn.className = "stage-btn px-1.5 py-0.5 rounded text-[10px] font-mono-val border bg-rose-950/40 border-rose-500/40 text-rose-300";
+        } else {
+          btn.className = "stage-btn px-1.5 py-0.5 rounded text-[10px] font-mono-val border bg-slate-900 border-slate-800 text-slate-400";
+        }
+      });
+
+      const badge = document.getElementById('stage-badge');
+      badge.textContent = data.badge;
+      if (cascadeState.stage === 0) {
+        badge.className = "px-1.5 py-0.2 rounded text-[9px] font-mono-val font-semibold bg-emerald-950 text-emerald-300 border border-emerald-500/30";
+      } else if (cascadeState.stage === 4) {
+        badge.className = "px-1.5 py-0.2 rounded text-[9px] font-mono-val font-semibold bg-rose-950 text-rose-300 border border-rose-500/40 animate-pulse";
+      } else {
+        badge.className = "px-1.5 py-0.2 rounded text-[9px] font-mono-val font-semibold bg-amber-950 text-amber-300 border border-amber-500/40";
+      }
+      document.getElementById('stage-location-tag').textContent = data.location;
+      document.getElementById('stage-explanation-text').textContent = data.story;
+
+      const statusBadge = document.getElementById('plant-trip-badge');
+      const bulb = document.getElementById('status-bulb');
+      const bannerText = document.getElementById('status-banner-text');
+
+      if (cascadeState.stage === 0) {
+        statusBadge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-[10px] font-medium";
+        bulb.className = "w-1.5 h-1.5 rounded-full bg-emerald-400";
+        bannerText.textContent = "NOMINAL (STAGE 0)";
+      } else if (cascadeState.stage < 4) {
+        statusBadge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-950/50 border border-amber-500/40 text-amber-300 text-[10px] font-medium";
+        bulb.className = "w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping";
+        bannerText.textContent = `PROPAGATING: S${cascadeState.stage} (+${data.timeMin}m)`;
+      } else {
+        statusBadge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded bg-rose-950/60 border border-rose-500/50 text-rose-300 text-[10px] font-bold";
+        bulb.className = "w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping";
+        bannerText.textContent = "PLANT TRIP (STAGE 4)";
+      }
+
+      // Vessel Status Badges
+      const rBadge = document.getElementById('reactor-domino-badge');
+      const rText = document.getElementById('reactor-domino-text');
+      rText.textContent = data.reactorStatus;
+      if (data.reactorStatus.includes("NORMAL") || data.reactorStatus.includes("HOLDING")) {
+        rBadge.setAttribute('stroke', '#334155');
+        rText.setAttribute('fill', '#10b981');
+      } else if (data.reactorStatus.includes("TRIPPED")) {
+        rBadge.setAttribute('stroke', '#ef4444');
+        rText.setAttribute('fill', '#ef4444');
+      } else {
+        rBadge.setAttribute('stroke', '#f59e0b');
+        rText.setAttribute('fill', '#f59e0b');
+      }
+
+      const sBadge = document.getElementById('sep-domino-badge');
+      const sText = document.getElementById('sep-domino-text');
+      sText.textContent = data.sepStatus;
+      if (data.sepStatus.includes("NORMAL")) {
+        sBadge.setAttribute('stroke', '#334155');
+        sText.setAttribute('fill', '#10b981');
+      } else if (data.sepStatus.includes("TRIPPED") || data.sepStatus.includes("OFF-SPEC")) {
+        sBadge.setAttribute('stroke', '#ef4444');
+        sText.setAttribute('fill', '#ef4444');
+      } else {
+        sBadge.setAttribute('stroke', '#f59e0b');
+        sText.setAttribute('fill', '#f59e0b');
+      }
+
+      const tBadge = document.getElementById('stripper-domino-badge');
+      const tText = document.getElementById('stripper-domino-text');
+      tText.textContent = data.stripperStatus;
+      if (data.stripperStatus.includes("ON-SPEC")) {
+        tBadge.setAttribute('stroke', '#334155');
+        tText.setAttribute('fill', '#10b981');
+      } else if (data.stripperStatus.includes("TRIP") || data.stripperStatus.includes("SHUTDOWN")) {
+        tBadge.setAttribute('stroke', '#ef4444');
+        tText.setAttribute('fill', '#ef4444');
+      } else {
+        tBadge.setAttribute('stroke', '#f59e0b');
+        tText.setAttribute('fill', '#f59e0b');
+      }
+
+      // Stream colors
+      document.getElementById('path-feed-a-flow').setAttribute('stroke', data.flowColorFeedA);
+      document.getElementById('path-effluent-flow').setAttribute('stroke', data.flowColorEffluent);
+      document.getElementById('path-product-flow').setAttribute('stroke', data.flowColorProduct);
+      document.getElementById('txt-product-label').textContent = data.productText;
+      document.getElementById('txt-product-label').setAttribute('fill', data.flowColorProduct);
+
+      // Glow indicators
+      const allGlows = ["glow-valve-cv01", "glow-valve-cv10", "glow-reactor", "glow-condenser", "glow-separator", "glow-compressor", "glow-stripper"];
+      allGlows.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          if (data.impactedUnits.includes(id)) {
+            el.setAttribute('stroke-width', '3');
+            el.setAttribute('opacity', '0.85');
+            el.classList.add('cascade-pulse');
+          } else {
+            el.setAttribute('stroke-width', '0');
+            el.setAttribute('opacity', '0');
+            el.classList.remove('cascade-pulse');
+          }
+        }
+      });
+
+      // Path arrows
+      const allArrows = ["domino-arrow-1-2", "domino-arrow-2-3", "domino-arrow-3-4"];
+      allArrows.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          if (data.activeArrows.includes(id)) {
+            el.setAttribute('stroke-width', '2');
+            el.setAttribute('opacity', '0.9');
+            el.classList.add('cascade-pulse');
+          } else {
+            el.setAttribute('stroke-width', '0');
+            el.setAttribute('opacity', '0');
+            el.classList.remove('cascade-pulse');
+          }
+        }
+      });
+
+      // Detector Badges
+      const isPcaNormal = data.pcaStatus === "NORMAL";
+      document.getElementById('badge-pca').textContent = isPcaNormal ? "NORMAL" : data.pcaStatus;
+      document.getElementById('badge-pca').className = isPcaNormal ? 
+        "px-1.5 py-0.5 rounded text-[9px] font-mono-val font-semibold bg-emerald-950 text-emerald-300 border border-emerald-500/30 shrink-0" : 
+        "px-1.5 py-0.5 rounded text-[9px] font-mono-val font-bold bg-sky-950 text-sky-300 border border-sky-500/50 shrink-0";
+      document.getElementById('pca-reaction-desc').textContent = data.pcaDesc;
+
+      const isRuleNormal = data.ruleStatus === "NORMAL";
+      document.getElementById('badge-rule').textContent = isRuleNormal ? "NORMAL" : data.ruleStatus;
+      document.getElementById('badge-rule').className = isRuleNormal ? 
+        "px-1.5 py-0.5 rounded text-[9px] font-mono-val font-semibold bg-emerald-950 text-emerald-300 border border-emerald-500/30 shrink-0" : 
+        "px-1.5 py-0.5 rounded text-[9px] font-mono-val font-bold bg-amber-950 text-amber-300 border border-amber-500/50 shrink-0";
+      document.getElementById('rule-reaction-desc').textContent = data.ruleDesc;
+
+      const isIfNormal = data.ifStatus === "NORMAL" || data.ifStatus.includes("BLIND");
+      document.getElementById('badge-if').textContent = isIfNormal ? (data.ifStatus.includes("BLIND") ? "BLIND" : "NORMAL") : data.ifStatus;
+      document.getElementById('badge-if').className = isIfNormal ? 
+        "px-1.5 py-0.5 rounded text-[9px] font-mono-val font-semibold bg-slate-900 text-slate-400 border border-slate-800 shrink-0" : 
+        "px-1.5 py-0.5 rounded text-[9px] font-mono-val font-bold bg-rose-950 text-rose-300 border border-rose-500/50 shrink-0";
+      document.getElementById('if-reaction-desc').textContent = data.ifDesc;
+
+      // Domino Chain cards
+      [1, 2, 3, 4].forEach(i => {
+        const card = document.getElementById(`chain-card-${i}`);
+        if (i <= cascadeState.stage) {
+          card.className = "p-1.5 rounded border border-rose-500/40 bg-rose-950/20 shadow-sm transition-all";
+        } else {
+          card.className = "p-1.5 rounded border border-slate-800/80 bg-slate-900/40 transition-all opacity-50";
+        }
+      });
+    }
+
+    function setCascadeStage(s) {
+      cascadeState.stage = Math.max(0, Math.min(4, s));
+      renderStage();
+    }
+
+    function changeScenario(val) {
+      cascadeState.scenario = val;
+      cascadeState.stage = 0;
+      if (cascadeState.isPlaying) togglePlayCascade();
+      renderStage();
+    }
+
+    function togglePlayCascade() {
+      cascadeState.isPlaying = !cascadeState.isPlaying;
+      const btn = document.getElementById('btn-play-cascade');
+      const icon = document.getElementById('play-cascade-icon');
+      const label = document.getElementById('play-cascade-label');
+
+      if (cascadeState.isPlaying) {
+        icon.textContent = "❚❚";
+        label.textContent = "Pause";
+        btn.className = "px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-medium flex items-center gap-1 transition-colors";
+        cascadeState.intervalId = setInterval(() => {
+          if (cascadeState.stage >= 4) {
+            cascadeState.stage = 0;
+          } else {
+            cascadeState.stage += 1;
+          }
+          renderStage();
+        }, 2200);
+      } else {
+        icon.textContent = "▶";
+        label.textContent = "Play";
+        btn.className = "px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-medium flex items-center gap-1 transition-colors";
+        clearInterval(cascadeState.intervalId);
+      }
+    }
+
+    function resetToNominal() {
+      if (cascadeState.isPlaying) togglePlayCascade();
+      cascadeState.stage = 0;
+      renderStage();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      renderStage();
+    });
+  </script>
+</body>
+</html>

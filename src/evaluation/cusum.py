@@ -114,13 +114,15 @@ class CUSUMDetector:
         alarms = (c_stat >= self.h_).astype(int)
         return c_stat, alarms
 
-    def compute_first_detection(self, scores: np.ndarray) -> Optional[int]:
+    def compute_first_detection(self, scores: np.ndarray, start_idx: int = 0) -> Optional[int]:
         """
-        Finds 0-indexed sample of first change-point alarm C_t >= h_.
+        Finds 0-indexed sample of first change-point alarm C_t >= h_ at or after start_idx.
         """
         c_stat = self.transform(scores)
-        crossings = np.where(c_stat >= self.h_)[0]
-        return int(crossings[0]) if len(crossings) > 0 else None
+        if start_idx >= len(c_stat):
+            return None
+        crossings = np.where(c_stat[start_idx:] >= self.h_)[0]
+        return int(crossings[0] + start_idx) if len(crossings) > 0 else None
 
 
 def compute_cusum_lead_time(
@@ -130,24 +132,30 @@ def compute_cusum_lead_time(
     sampling_interval_minutes: int = 3,
 ) -> Dict[str, Any]:
     """
-    Evaluates detection sample and lead time (delay) using calibrated CUSUM.
+    Evaluates post-fault detection sample and non-negative delay using calibrated CUSUM.
+    Restricts search strictly to t >= fault_intro_sample.
     """
-    first_idx = cusum_detector.compute_first_detection(scores)
+    start_idx = max(0, fault_intro_sample - 1)
+    first_idx = cusum_detector.compute_first_detection(scores, start_idx=start_idx)
     if first_idx is None:
         return {
             "first_detection_sample": None,
+            "detection_delay_samples": None,
+            "detection_delay_minutes": None,
             "lead_time_samples": None,
             "lead_time_minutes": None,
             "detected": False,
         }
 
     detected_sample = first_idx + 1  # 1-indexed
-    lead_time_samples = detected_sample - fault_intro_sample
-    lead_time_minutes = lead_time_samples * sampling_interval_minutes
+    delay_samples = max(0, detected_sample - fault_intro_sample)
+    delay_minutes = float(delay_samples * sampling_interval_minutes)
 
     return {
         "first_detection_sample": detected_sample,
-        "lead_time_samples": lead_time_samples,
-        "lead_time_minutes": lead_time_minutes,
+        "detection_delay_samples": delay_samples,
+        "detection_delay_minutes": delay_minutes,
+        "lead_time_samples": delay_samples,
+        "lead_time_minutes": delay_minutes,
         "detected": True,
     }
